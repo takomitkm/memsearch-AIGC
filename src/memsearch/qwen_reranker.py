@@ -26,6 +26,7 @@ from typing import Any
 DEFAULT_MODEL = "Qwen3-Reranker-8B"
 DEFAULT_URL = "http://127.0.0.1:8081/v1/rerank"
 URL_ENV_VAR = "MEMSEARCH_QWEN_RERANKER_URL"
+API_KEY_ENV_VAR = "MEMSEARCH_QWEN_RERANKER_API_KEY"
 
 
 class QwenApiReranker:
@@ -36,12 +37,23 @@ class QwenApiReranker:
     CPU deployment reached through a loopback tunnel.
     """
 
-    def __init__(self, model: str = DEFAULT_MODEL, *, url: str | None = None, timeout: float = 60.0) -> None:
+    def __init__(
+        self,
+        model: str = DEFAULT_MODEL,
+        *,
+        url: str | None = None,
+        timeout: float = 60.0,
+        api_key: str | None = None,
+    ) -> None:
         if not model or timeout <= 0:
             raise ValueError("A model and positive timeout are required")
         self.model = model
         self.url = url or os.environ.get(URL_ENV_VAR) or DEFAULT_URL
         self.timeout = timeout
+        # Optional bearer token. Empty for the default self-hosted service;
+        # set for hosted relays that authenticate the rerank endpoint
+        # (e.g. SiliconFlow https://api.siliconflow.cn/v1/rerank).
+        self.api_key = api_key or os.environ.get(API_KEY_ENV_VAR) or ""
 
     def build_request(self, query: str, documents: list[str]) -> dict[str, Any]:
         """Build the rerank payload, preserving every candidate's text."""
@@ -78,10 +90,13 @@ class QwenApiReranker:
         """Return the service response for scoring, having posted every candidate."""
         if not documents:
             return {"model": self.model, "results": []}
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
         request = urllib.request.Request(
             self.url,
             data=json.dumps(self.build_request(query, documents)).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers=headers,
             method="POST",
         )
         try:
