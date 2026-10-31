@@ -164,9 +164,14 @@ memsearch index docs/ --exclude 'generated/**' --exclude '*.draft.md'
 
 ## Embedding Provider
 
+The Claude Code, Codex, OpenClaw, OpenCode, and DSH plugins select ONNX when no
+configuration exists and preserve existing configuration. The CLI defaults to
+OpenAI. The Python API also defaults to OpenAI and takes its settings directly
+as constructor arguments, such as `embedding_provider="onnx"` for local embeddings.
+
 | Provider | Install | API Key | Notes |
 |----------|---------|---------|-------|
-| **onnx** (default) | `pip install memsearch[onnx]` | No | Local, free, ~100MB model download |
+| **onnx** | `pip install memsearch[onnx]` | No | Local, free, ~558 MB model download |
 | openai | `pip install memsearch[openai]` | `OPENAI_API_KEY` | Best quality |
 | google | `pip install memsearch[google]` | `GOOGLE_API_KEY` | Gemini embeddings |
 | voyage | `pip install memsearch[voyage]` | `VOYAGE_API_KEY` | High quality |

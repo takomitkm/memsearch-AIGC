@@ -32,7 +32,7 @@
 
 - **Optional Jev reranking** — rerank memory search results with Jev through the TypeSafe API, with no local model download. See [configuration](docs/home/configuration.md#optional-remote-reranking) and the [Chinese/English evaluation](evaluation/reranking-evaluation.md).
 
-- **DeepSeek Harness support** — MemSearch now brings automatic capture, pre-step memory injection, native skill-based recall, background maintenance, and a read-only memory browser to [DeepSeek Harness (DSH)](https://zilliztech.github.io/memsearch/platforms/dsh/).
+- **DeepSeek Harness support** — MemSearch now brings automatic capture, recall hints, native skill-based recall, background maintenance, and a read-only memory browser to [DeepSeek Harness (DSH)](https://zilliztech.github.io/memsearch/platforms/dsh/).
 - **Skills from memory** — MemSearch now distills the workflows you repeat into reusable, installable agent skills (a third "procedural memory" layer) and keeps them up to date in the background. See [Skills from Memory](#skills-from-memory).
 - **Advanced memory maintenance** — optional background tasks keep durable `PROJECT.md` and `USER.md` notes current across sessions. See [Advanced Memory Maintenance](#advanced-memory-maintenance).
 
@@ -181,28 +181,15 @@ We discussed batch size limits before, what did we decide?
 <details>
 <summary><h3>For OpenCode Users</h3></summary>
 
-```json
-// In ~/.config/opencode/opencode.json
-{ "plugin": ["@zilliz/memsearch-opencode"] }
-```
-
-After installing, chat in TUI as usual. A background daemon captures conversations.
-
-**Verify it's working:**
+MemSearch gives OpenCode persistent memory across sessions. Install the plugin:
 
 ```bash
-ls .memsearch/memory/    # daily .md files appear after a few conversations
+opencode plugin add @zilliz/memsearch-opencode
 ```
 
-**Recall memories** — two ways to trigger:
+Completed turns are summarized into `.memsearch/memory/` and indexed for recall. Pending work resumes after an interruption.
 
-```
-/memory-recall what did we discuss about authentication?
-```
-Or just ask naturally — the LLM auto-invokes memory tools when it senses the question needs history:
-```
-We discussed the authentication flow before, what was the approach?
-```
+Ask about previous decisions or debugging sessions, and OpenCode can search memory, expand relevant notes, and look up the original conversation. The `memory-recall`, `memory-config`, and `memory-to-skill` Skills are included.
 
 > 📖 [OpenCode Plugin docs](https://zilliztech.github.io/memsearch/platforms/opencode/)
 
@@ -214,10 +201,10 @@ All plugins share the same memsearch backend. Configure once, works everywhere.
 
 #### Embedding
 
-Defaults to **ONNX bge-m3** — runs locally on CPU, no API key, no cost. On first launch the model (~558 MB) is downloaded from HuggingFace Hub.
+Use **ONNX bge-m3** for local CPU embeddings with no API key. On first launch the model (~558 MB) is downloaded from HuggingFace Hub.
 
 ```bash
-memsearch config set embedding.provider onnx     # default — local, free
+memsearch config set embedding.provider onnx     # local, free
 memsearch config set embedding.provider openai   # needs OPENAI_API_KEY
 memsearch config set embedding.provider ollama   # local, any model
 ```
@@ -441,7 +428,7 @@ pip install memsearch           # into an activated venv
 <summary><b>Optional embedding providers</b></summary>
 
 ```bash
-# As a CLI tool (recommended — local ONNX, no API key)
+# Install local ONNX support for the CLI
 uv tool install "memsearch[onnx]"
 pipx install "memsearch[onnx]"
 pip install "memsearch[onnx]"
@@ -455,6 +442,8 @@ uv add "memsearch[onnx]"
 </details>
 
 ### 🐍 Python API — Give Your Agent Memory
+
+The Python API defaults to OpenAI (`OPENAI_API_KEY`). For local embeddings, pass `embedding_provider="onnx"`.
 
 ```python
 from memsearch import MemSearch

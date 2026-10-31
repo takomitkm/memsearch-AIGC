@@ -1,0 +1,30 @@
+name: Codex macOS hooks
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/codex/**'
+      - 'tests/test_codex_stop_hook_*.py'
+      - '.github/workflows/codex-macos.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'plugins/codex/**'
+      - 'tests/test_codex_stop_hook_*.py'
+      - '.github/workflows/codex-macos.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  stop-hook:
+    runs-on: macos-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v7
+      - name: Check native temporary files and capture workers
+        run: uv run --no-project --with pytest python -m pytest tests/test_codex_stop_hook_tmpfile.py tests/test_codex_stop_hook_utf8.py -q

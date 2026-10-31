@@ -10,6 +10,7 @@ from pathlib import Path
 
 import click
 
+from .chunker import _HEADING_RE
 from .config import (
     GLOBAL_CONFIG_PATH,
     PROJECT_CONFIG_PATH,
@@ -496,7 +497,9 @@ def mcp(
 
 @cli.command()
 @click.argument("chunk_hash")
-@click.option("--section/--no-section", default=True, help="Show full heading section (default).")
+@click.option(
+    "--section/--no-section", default=True, help="Show full heading section (default) or only the chunk's own lines."
+)
 @click.option("--lines", "-n", default=None, type=int, help="Show N lines before/after instead of full section.")
 @click.option("--json-output", "-j", is_flag=True, help="Output as JSON.")
 @_common_options
@@ -518,7 +521,8 @@ def expand(
     """Expand a memory chunk to show full context. [Claude Code plugin: L2]
 
     Look up CHUNK_HASH in the index, then read the source markdown file
-    to return the surrounding context (full heading section by default).
+    to return the surrounding context (full heading section by default,
+    or the chunk's own lines with --no-section).
 
     Part of the progressive disclosure workflow (search -> expand -> transcript).
     """
@@ -563,6 +567,17 @@ def expand(
             sys.exit(1)
 
         all_lines = read_utf8_text_replace(source_path).splitlines()
+        if start_line > len(all_lines):
+            click.echo(
+                f"Warning: chunk start_line {start_line} is past the end of {source} "
+                f"({len(all_lines)} lines); the index is out of sync with the file. "
+                "Re-run 'memsearch index <path>' to refresh it.",
+                err=True,
+            )
+
+        if lines is None and not section:
+            # Chunk-only view: same range as `--lines 0`
+            lines = 0
 
         if lines is not None:
             # Show N lines before/after the chunk
@@ -635,6 +650,8 @@ def _extract_section(
     Walks backward to find the section heading, then forward to the next
     heading of equal or higher level (or EOF).
     """
+    # Shared with the MCP `memory_expand` tool; carries the same clamping
+    # upstream applied here when the source file shrank since indexing.
     from .expand import extract_section
 
     return extract_section(all_lines, start_line, heading_level)

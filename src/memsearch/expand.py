@@ -8,6 +8,8 @@ server share one implementation.
 
 from __future__ import annotations
 
+from .chunker import _HEADING_RE
+
 
 def extract_section(
     all_lines: list[str],
@@ -33,27 +35,24 @@ def extract_section(
     tuple
         ``(content, first_line, last_line)`` with 1-based line numbers.
     """
-    # Find section start — walk backward to the heading
+    # Find section start — walk backward to the heading, starting at the
+    # chunk's own first line (clamped in case the file shrank since indexing)
     section_start = start_line - 1  # 0-indexed
     if heading_level > 0:
-        for i in range(start_line - 2, -1, -1):
-            line = all_lines[i]
-            if line.startswith("#"):
-                level = len(line) - len(line.lstrip("#"))
-                if level <= heading_level:
-                    section_start = i
-                    break
+        for i in range(min(start_line, len(all_lines)) - 1, -1, -1):
+            m = _HEADING_RE.match(all_lines[i])
+            if m and len(m.group(1)) <= heading_level:
+                section_start = i
+                break
 
     # Find section end — walk forward to the next heading of same or higher level
     section_end = len(all_lines)
     if heading_level > 0:
         for i in range(start_line, len(all_lines)):
-            line = all_lines[i]
-            if line.startswith("#"):
-                level = len(line) - len(line.lstrip("#"))
-                if level <= heading_level:
-                    section_end = i
-                    break
+            m = _HEADING_RE.match(all_lines[i])
+            if m and len(m.group(1)) <= heading_level:
+                section_end = i
+                break
 
     content = "\n".join(all_lines[section_start:section_end])
     return content, section_start + 1, section_end
