@@ -10,7 +10,6 @@ from pathlib import Path
 
 import click
 
-from .chunker import _HEADING_RE
 from .config import (
     GLOBAL_CONFIG_PATH,
     PROJECT_CONFIG_PATH,
