@@ -44,7 +44,19 @@ PLUGIN_FILES = ["index.js", "README.md"]
 PLUGIN_SOURCE = REPO / "plugins" / "dsh"
 PLUGIN_TARGET_DEFAULT = Path.home() / ".dsh" / "profiles" / "desktop" / "node_modules" / "@zilliz" / "memsearch-dsh"
 
-PY_FILES = ["qwen_reranker.py", "reranker.py", "core.py"]
+# Every CLI file that differs from the PyPI wheel: fork-touched plus fork-only
+# (the MCP server, expand and the knowledge store ship only in this fork, so
+# leaving them off this list made `uv tool upgrade` silently drop them).
+PY_FILES = [
+    "cli.py",
+    "config.py",
+    "core.py",
+    "reranker.py",
+    "qwen_reranker.py",
+    "expand.py",
+    "knowledge_store.py",
+    "mcp_server.py",
+]
 PY_SOURCE = REPO / "src" / "memsearch"
 
 
