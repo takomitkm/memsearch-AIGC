@@ -425,13 +425,13 @@ To rerank against a remote service instead, point the prefix at it:
 
 ```bash
 export MEMSEARCH_REMOTE_RERANKER_URL="http://127.0.0.1:8081/v1/rerank"
-memsearch config set reranker.model "remote:BAAI/bge-reranker-v2-m3"
+memsearch config set reranker.model "remote:Qwen3-Reranker-8B"
 memsearch search "how to configure Redis caching"
 ```
 
 The same query and candidate contents leave the machine, but go to your own
-endpoint (or a hosted relay such as SiliconFlow, which authenticates with
-`MEMSEARCH_REMOTE_RERANKER_API_KEY`). `MEMSEARCH_REMOTE_RERANKER_URL` defaults
+endpoint (or any hosted rerank API serving the same payload shape, which
+authenticates with `MEMSEARCH_REMOTE_RERANKER_API_KEY`). `MEMSEARCH_REMOTE_RERANKER_URL` defaults
 to `http://127.0.0.1:8081/v1/rerank` when unset. Each request waits up to 60 s,
 which a CPU-served cross-encoder can exceed. See
 [reranker configuration](home/configuration.md#remote-rerank-service).

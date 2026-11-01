@@ -81,19 +81,19 @@ backends. See [reranking evaluation](https://github.com/zilliztech/memsearch/blo
 
 A model name prefixed with `remote:` sends the candidates to a
 `/v1/rerank`-compatible HTTP service instead of the TypeSafe API or a local
-cross-encoder — a self-hosted deployment, or a hosted relay such as
-SiliconFlow:
+cross-encoder — a self-hosted deployment (vLLM's `/v1/rerank` and compatible
+services), or any hosted rerank API serving the same payload shape:
 
 ```bash
 export MEMSEARCH_REMOTE_RERANKER_URL="http://127.0.0.1:8081/v1/rerank"
-memsearch config set reranker.model "remote:BAAI/bge-reranker-v2-m3"
+memsearch config set reranker.model "remote:Qwen3-Reranker-8B"
 ```
 
 The equivalent setting in `~/.memsearch/config.toml` is:
 
 ```toml
 [reranker]
-model = "remote:BAAI/bge-reranker-v2-m3"
+model = "remote:Qwen3-Reranker-8B"
 ```
 
 The text after the prefix is sent as the request `model` field, so it must

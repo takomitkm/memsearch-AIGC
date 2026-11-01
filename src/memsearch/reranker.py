@@ -12,9 +12,9 @@ If neither is installed, reranking is silently skipped.
 
 Model names prefixed with ``jev:`` explicitly select the remote Jev API instead.
 Model names prefixed with ``remote:`` select a rerank HTTP service instead —
-a self-hosted ``/v1/rerank`` endpoint or a hosted relay such as SiliconFlow,
-reached via ``MEMSEARCH_REMOTE_RERANKER_URL``; anything else stays on the
-local backends above.
+a self-hosted ``/v1/rerank`` endpoint or a hosted rerank API serving the same
+payload shape, reached via ``MEMSEARCH_REMOTE_RERANKER_URL``; anything else
+stays on the local backends above.
 """
 
 from __future__ import annotations
@@ -262,7 +262,7 @@ def rerank(
     model_name:
         HuggingFace model ID for the cross-encoder, ``jev:jev-latest``
         for remote reranking using ``TYPESAFE_API_KEY``, or
-        ``remote:BAAI/bge-reranker-v2-m3`` for a rerank HTTP service
+        ``remote:Qwen3-Reranker-8B`` for a rerank HTTP service
         reached through ``MEMSEARCH_REMOTE_RERANKER_URL``.
     top_k:
         Return only the top-k results after reranking.

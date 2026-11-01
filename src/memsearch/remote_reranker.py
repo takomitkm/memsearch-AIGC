@@ -1,13 +1,12 @@
 """Remote reranking against a rerank HTTP service.
 
 Model names prefixed with ``remote:`` select this backend, e.g.
-``remote:BAAI/bge-reranker-v2-m3``. The endpoint comes from
+``remote:Qwen3-Reranker-8B``. The endpoint comes from
 ``MEMSEARCH_REMOTE_RERANKER_URL`` (or the constructor) and defaults to the
 loopback port used by an SSH tunnel to a self-hosted reranker deployment.
-Hosted relays serving the same payload shape (e.g. SiliconFlow's
-``https://api.siliconflow.cn/v1/rerank``) are reached by pointing
+Hosted rerank APIs serving the same payload shape are reached by pointing
 ``MEMSEARCH_REMOTE_RERANKER_URL`` at them and setting
-``MEMSEARCH_REMOTE_RERANKER_API_KEY``.
+``MEMSEARCH_REMOTE_RERANKER_API_KEY`` for bearer authentication.
 
 The service scores every candidate against the query and returns
 ``results[]`` of ``{"index", "relevance_score"}`` — the shape served by vLLM's
@@ -61,8 +60,8 @@ class RemoteReranker:
             raise ValueError("Remote reranker URL must use http or https")
         self.timeout = timeout
         # Optional bearer token. Empty for the default self-hosted service;
-        # set for hosted relays that authenticate the rerank endpoint
-        # (e.g. SiliconFlow https://api.siliconflow.cn/v1/rerank).
+        # set for hosted rerank APIs that authenticate the endpoint with a
+        # bearer token.
         self.api_key = api_key or os.environ.get(API_KEY_ENV_VAR) or ""
 
     def build_request(self, query: str, documents: list[str]) -> dict[str, Any]:
