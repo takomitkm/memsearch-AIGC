@@ -98,15 +98,16 @@ ranking; no accept/reject threshold has been calibrated for this dataset.
 See the [reranking evaluation](https://github.com/zilliztech/memsearch/blob/main/evaluation/reranking-evaluation.md) for the frozen
 candidate comparison with Voyage and its limitations.
 
-### Optional self-hosted rerank service
+### Optional remote rerank service
 
-`qwen-api:` selects an HTTP rerank endpoint you run yourself — vLLM's
-`/v1/rerank` and compatible relays. The URL comes from
-`MEMSEARCH_QWEN_RERANKER_URL`, or from the constructor when you build the
-adapter directly:
+`remote:` selects an HTTP rerank endpoint — one you run yourself (vLLM's
+`/v1/rerank` and compatible relays) or a hosted relay such as SiliconFlow,
+which authenticates with a bearer token via `MEMSEARCH_REMOTE_RERANKER_API_KEY`.
+The URL comes from `MEMSEARCH_REMOTE_RERANKER_URL`, or from the constructor
+when you build the adapter directly:
 
 ```python
-mem = MemSearch(paths=["./memory"], reranker_model="qwen-api:Qwen3-Reranker-8B")
+mem = MemSearch(paths=["./memory"], reranker_model="remote:BAAI/bge-reranker-v2-m3")
 results = await mem.search("Why was the cache policy changed?", top_k=5)
 ```
 
@@ -115,7 +116,13 @@ For candidates obtained elsewhere, or to bound the wait differently, use the
 adapter directly:
 
 ```python
-from memsearch.qwen_reranker import QwenApiReranker
+from memsearch.remote_reranker import RemoteReranker
+
+ranked = RemoteReranker(
+    "BAAI/bge-reranker-v2-m3",
+    url="http://127.0.0.1:8081/v1/rerank",
+    timeout=120.0,
+).rerank(
 
 ranked = QwenApiReranker(
     "Qwen3-Reranker-8B",

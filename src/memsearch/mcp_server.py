@@ -265,13 +265,13 @@ class MCPServer:
             raise ValueError("query and documents are required")
 
         model = self._cfg.reranker.model or ""
-        if not model.startswith("qwen-api:"):
+        if not model.startswith("remote:"):
             raise ValueError(
-                "no remote reranker configured: set reranker.model to 'qwen-api:<model>' in ~/.memsearch/config.toml"
+                "no remote reranker configured: set reranker.model to 'remote:<model>' in ~/.memsearch/config.toml"
             )
-        from .qwen_reranker import QwenApiReranker
+        from .remote_reranker import RemoteReranker
 
-        reranker = QwenApiReranker(model=model.split(":", 1)[1])
+        reranker = RemoteReranker(model=model.split(":", 1)[1])
         candidates = [{"content": doc} for doc in documents]
         ranked = reranker.rerank(query, candidates)
         return "\n".join(f"{i}. score={r['score']:.6f}  {documents[i]}" for i, r in enumerate(ranked[: len(documents)]))
@@ -320,12 +320,12 @@ class MCPServer:
 
     def _rerank_documents(self, query: str, documents: list[str]) -> list[float] | None:
         model = self._cfg.reranker.model or ""
-        if not model.startswith("qwen-api:"):
+        if not model.startswith("remote:"):
             return None
         try:
-            from .qwen_reranker import QwenApiReranker
+            from .remote_reranker import RemoteReranker
 
-            reranker = QwenApiReranker(model=model.split(":", 1)[1])
+            reranker = RemoteReranker(model=model.split(":", 1)[1])
             response = reranker.evaluate(query, documents)
             scores = reranker.scores(response, len(documents))
         except Exception:
@@ -415,7 +415,7 @@ class MCPServer:
                 "name": "rerank",
                 "description": (
                     "Cross-encoder rerank documents against a query using the "
-                    "configured remote reranker (reranker.model = 'qwen-api:...')."
+                    "configured remote reranker (reranker.model = 'remote:...')."
                 ),
                 "inputSchema": {
                     "type": "object",

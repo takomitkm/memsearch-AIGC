@@ -11,8 +11,10 @@ Local backends are auto-detected at runtime:
 If neither is installed, reranking is silently skipped.
 
 Model names prefixed with ``jev:`` explicitly select the remote Jev API instead.
-Model names prefixed with ``qwen-api:`` select a self-hosted rerank HTTP service
-instead; anything else stays on the local backends above.
+Model names prefixed with ``remote:`` select a rerank HTTP service instead —
+a self-hosted ``/v1/rerank`` endpoint or a hosted relay such as SiliconFlow,
+reached via ``MEMSEARCH_REMOTE_RERANKER_URL``; anything else stays on the
+local backends above.
 """
 
 from __future__ import annotations
@@ -260,8 +262,8 @@ def rerank(
     model_name:
         HuggingFace model ID for the cross-encoder, ``jev:jev-latest``
         for remote reranking using ``TYPESAFE_API_KEY``, or
-        ``qwen-api:Qwen3-Reranker-8B`` for a self-hosted rerank service
-        reached through ``MEMSEARCH_QWEN_RERANKER_URL``.
+        ``remote:BAAI/bge-reranker-v2-m3`` for a rerank HTTP service
+        reached through ``MEMSEARCH_REMOTE_RERANKER_URL``.
     top_k:
         Return only the top-k results after reranking.
         0 means return all results (re-sorted).
@@ -279,10 +281,10 @@ def rerank(
 
         return JevReranker(model=model_name.removeprefix("jev:")).rerank(query, results, top_k=top_k)
 
-    if model_name.startswith("qwen-api:"):
-        from .qwen_reranker import QwenApiReranker
+    if model_name.startswith("remote:"):
+        from .remote_reranker import RemoteReranker
 
-        return QwenApiReranker(model=model_name.removeprefix("qwen-api:")).rerank(query, results, top_k=top_k)
+        return RemoteReranker(model=model_name.removeprefix("remote:")).rerank(query, results, top_k=top_k)
 
     backend = _detect_backend()
     if backend == "onnx":

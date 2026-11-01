@@ -103,10 +103,10 @@ api_key = "dummy"
 model = "Qwen3-Embedding-4B"
 
 [reranker]
-model = "qwen-api:Qwen3-Reranker-0.6B"  # remote cross-encoder
+model = "remote:Qwen3-Reranker-0.6B"    # remote cross-encoder
 ```
 
-The reranker endpoint is read from `MEMSEARCH_QWEN_RERANKER_URL`
+The reranker endpoint is read from `MEMSEARCH_REMOTE_RERANKER_URL`
 (default `http://127.0.0.1:8081/v1/rerank`).
 
 > **Collection names differ per machine.** The plugins derive the

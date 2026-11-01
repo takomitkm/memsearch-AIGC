@@ -1,4 +1,4 @@
-"""Contract tests for the self-hosted rerank adapter, without network calls."""
+"""Contract tests for the remote rerank adapter, without network calls."""
 
 import copy
 import http.client
@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from memsearch.core import MemSearch
-from memsearch.qwen_reranker import DEFAULT_URL, QwenApiReranker
+from memsearch.remote_reranker import DEFAULT_URL, RemoteReranker
 from memsearch.reranker import rerank
 
 
@@ -42,7 +42,7 @@ def test_dispatch_strips_prefix_and_scores_every_candidate(monkeypatch):
     calls = []
     monkeypatch.setattr("urllib.request.urlopen", open_request([0.2, 0.8, 0.8], calls))
 
-    ranked = rerank("question", candidates, model_name="qwen-api:Qwen3-Reranker-8B", top_k=2)
+    ranked = rerank("question", candidates, model_name="remote:Qwen3-Reranker-8B", top_k=2)
 
     assert [r["source"] for r in ranked] == ["b.md", "c.md"]
     assert ranked[0]["chunk_id"] == "b"
@@ -61,9 +61,9 @@ def test_dispatch_strips_prefix_and_scores_every_candidate(monkeypatch):
 
 
 def test_url_comes_from_environment(monkeypatch):
-    monkeypatch.setenv("MEMSEARCH_QWEN_RERANKER_URL", "http://127.0.0.1:9999/rerank")
-    assert QwenApiReranker().url == "http://127.0.0.1:9999/rerank"
-    assert QwenApiReranker(url="http://explicit/rerank").url == "http://explicit/rerank"
+    monkeypatch.setenv("MEMSEARCH_REMOTE_RERANKER_URL", "http://127.0.0.1:9999/rerank")
+    assert RemoteReranker().url == "http://127.0.0.1:9999/rerank"
+    assert RemoteReranker(url="http://explicit/rerank").url == "http://explicit/rerank"
 
 
 def test_unranked_candidates_are_dropped(monkeypatch):
@@ -77,7 +77,7 @@ def test_unranked_candidates_are_dropped(monkeypatch):
 
     monkeypatch.setattr("urllib.request.urlopen", handler)
     candidates = [{"content": f"passage {i}"} for i in range(4)]
-    ranked = QwenApiReranker().rerank("question", candidates)
+    ranked = RemoteReranker().rerank("question", candidates)
     assert [r["content"] for r in ranked] == ["passage 2"]
 
 
@@ -86,7 +86,7 @@ def test_empty_candidates_need_no_request(monkeypatch):
         raise AssertionError("empty candidate list must not reach the network")
 
     monkeypatch.setattr("urllib.request.urlopen", fail)
-    assert QwenApiReranker().rerank("query", []) == []
+    assert RemoteReranker().rerank("query", []) == []
 
 
 @pytest.mark.parametrize("score", [None, True, "0.5", float("nan"), float("inf")])
@@ -94,7 +94,7 @@ def test_invalid_scores_fail(score):
     result = response([0.5])
     result["results"][0]["relevance_score"] = score
     with pytest.raises(ValueError, match="score"):
-        QwenApiReranker.scores(result, 1)
+        RemoteReranker.scores(result, 1)
 
 
 @pytest.mark.parametrize("index", [-1, 1, 4, "0", True, None])
@@ -102,15 +102,15 @@ def test_invalid_indexes_fail(index):
     result = response([0.5])
     result["results"][0]["index"] = index
     with pytest.raises(ValueError, match="index"):
-        QwenApiReranker.scores(result, 1)
+        RemoteReranker.scores(result, 1)
 
 
 def test_missing_results_or_duplicates_fail():
     with pytest.raises(ValueError, match="results list"):
-        QwenApiReranker.scores({"model": "x"}, 1)
+        RemoteReranker.scores({"model": "x"}, 1)
     duplicated = {"results": [{"index": 0, "relevance_score": 0.1}, {"index": 0, "relevance_score": 0.2}]}
     with pytest.raises(ValueError, match="duplicate"):
-        QwenApiReranker.scores(duplicated, 2)
+        RemoteReranker.scores(duplicated, 2)
 
 
 @pytest.mark.parametrize("code", [401, 429, 503])
@@ -120,7 +120,7 @@ def test_http_errors_do_not_leak_body_or_fall_back(monkeypatch, code):
 
     monkeypatch.setattr("urllib.request.urlopen", fail)
     with pytest.raises(RuntimeError, match=f"HTTP {code}") as exc:
-        QwenApiReranker().rerank("query", [{"content": "private text"}])
+        RemoteReranker().rerank("query", [{"content": "private text"}])
     assert "private" not in str(exc.value)
 
 
@@ -130,27 +130,39 @@ def test_disconnected_remote_request_fails_explicitly(monkeypatch):
 
     monkeypatch.setattr("urllib.request.urlopen", disconnect)
     with pytest.raises(RuntimeError, match="failed or timed out"):
-        QwenApiReranker().rerank("query", [{"content": "text"}])
+        RemoteReranker().rerank("query", [{"content": "text"}])
 
 
 def test_invalid_configuration():
     with pytest.raises(ValueError):
-        QwenApiReranker(model="")
+        RemoteReranker(model="")
     with pytest.raises(ValueError):
-        QwenApiReranker(timeout=0)
+        RemoteReranker(timeout=0)
     with pytest.raises(ValueError):
-        QwenApiReranker().rerank("q", [], top_k=-1)
+        RemoteReranker().rerank("q", [], top_k=-1)
+
+
+def test_url_scheme_is_restricted(monkeypatch):
+    # Only http/https are acceptable fetch targets; other schemes are a
+    # classic SSRF vector and are rejected at construction time.
+    with pytest.raises(ValueError, match="http or https"):
+        RemoteReranker(url="file:///etc/passwd")
+    with pytest.raises(ValueError, match="http or https"):
+        RemoteReranker(url="ftp://internal/x")
+    monkeypatch.setenv("MEMSEARCH_REMOTE_RERANKER_URL", "gopher://internal:70/x")
+    with pytest.raises(ValueError, match="http or https"):
+        RemoteReranker()
 
 
 @pytest.mark.asyncio
-async def test_search_fetches_extra_candidates_and_returns_qwen_top_k(monkeypatch):
+async def test_search_fetches_extra_candidates_and_returns_remote_top_k(monkeypatch):
     candidates = [{"content": f"passage {i}", "chunk_id": str(i)} for i in range(6)]
     store = Mock()
     store.search.return_value = candidates
     mem = MemSearch.__new__(MemSearch)
     mem._embedder = SimpleNamespace(embed=AsyncMock(return_value=[[0.1, 0.2]]))
     mem._store = store
-    mem._reranker_model = "qwen-api:Qwen3-Reranker-8B"
+    mem._reranker_model = "remote:Qwen3-Reranker-8B"
 
     def remote_request(*args, **kwargs):
         assert threading.current_thread() is not threading.main_thread()

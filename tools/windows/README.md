@@ -12,7 +12,7 @@ Neither layer reads the patch from this repository at runtime, so an overwrite
 is silent: the plugin reverts to the version that cannot find the `dsh` CLI on
 Windows (see the *Windows: launching the headless summarizer* section of
 [`plugins/dsh/README.md`](../plugins/dsh/README.md)), and the CLI reverts to a
-build where `reranker.model = "qwen-api:…"` silently falls through to the local
+build where `reranker.model = "remote:…"` silently falls through to the local
 ONNX/PyTorch backends and is skipped when neither is installed.
 
 `patch_installs.py` takes its masters from this working tree — `plugins/dsh/`

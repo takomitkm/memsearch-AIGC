@@ -77,37 +77,39 @@ Local cross-encoder model IDs continue to use the existing ONNX/PyTorch
 backends. See [reranking evaluation](https://github.com/zilliztech/memsearch/blob/main/evaluation/reranking-evaluation.md) for results and
 [Python API](../python-api.md#optional-jev-reranking) for programmatic use.
 
-### Self-hosted rerank service
+### Remote rerank service
 
-A model name prefixed with `qwen-api:` sends the candidates to your own
+A model name prefixed with `remote:` sends the candidates to a
 `/v1/rerank`-compatible HTTP service instead of the TypeSafe API or a local
-cross-encoder:
+cross-encoder — a self-hosted deployment, or a hosted relay such as
+SiliconFlow:
 
 ```bash
-export MEMSEARCH_QWEN_RERANKER_URL="http://127.0.0.1:8081/v1/rerank"
-memsearch config set reranker.model "qwen-api:Qwen3-Reranker-8B"
+export MEMSEARCH_REMOTE_RERANKER_URL="http://127.0.0.1:8081/v1/rerank"
+memsearch config set reranker.model "remote:BAAI/bge-reranker-v2-m3"
 ```
 
 The equivalent setting in `~/.memsearch/config.toml` is:
 
 ```toml
 [reranker]
-model = "qwen-api:Qwen3-Reranker-8B"
+model = "remote:BAAI/bge-reranker-v2-m3"
 ```
 
 The text after the prefix is sent as the request `model` field, so it must
-match what the service expects. `MEMSEARCH_QWEN_RERANKER_URL` is read when the
+match what the service expects. `MEMSEARCH_REMOTE_RERANKER_URL` is read when the
 request is built; without it, the default is
 `http://127.0.0.1:8081/v1/rerank`, which is the usual shape for an SSH tunnel
-to a machine on the LAN. Set the endpoint in the environment rather than in
-project config: a remote service is reachable only from the host that opens
-the tunnel, and an untrusted project directory must not be able to redirect
-query and chunk text to an address of its choosing.
+to a machine on the LAN. Hosted relays that authenticate the endpoint take a
+bearer token from `MEMSEARCH_REMOTE_RERANKER_API_KEY`. Set the endpoint in the
+environment rather than in project config: a remote service is reachable only
+from the host that opens the tunnel, and an untrusted project directory must
+not be able to redirect query and chunk text to an address of its choosing.
 
 The payload is `{"model", "query", "documents"}` and the response is
 `{"results": [{"index", "relevance_score"}]}`. Query and candidate contents
 leave the machine, exactly as they do for Jev. Like every other reranker,
-this only re-scores retrieved chunks, so changing to or from `qwen-api:` needs
+this only re-scores retrieved chunks, so changing to or from `remote:` needs
 no reindexing. A failed request raises rather than quietly returning the
 unreranked order.
 

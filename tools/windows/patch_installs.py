@@ -52,7 +52,7 @@ PY_FILES = [
     "config.py",
     "core.py",
     "reranker.py",
-    "qwen_reranker.py",
+    "remote_reranker.py",
     "expand.py",
     "knowledge_store.py",
     "mcp_server.py",
