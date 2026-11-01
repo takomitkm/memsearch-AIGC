@@ -124,10 +124,11 @@ The reranker endpoint is read from `MEMSEARCH_REMOTE_RERANKER_URL`
 
 ## The knowledge store tool
 
-`knowledge_search` reads a DeepSeek Harness knowledge store — the SQLite
-file the knowledge plugin keeps at
-`~/.dsh/storages/knowledge-chunks.sqlite` — with the same recipe the
-plugin itself uses:
+`knowledge_search` reads the store of the **third-party
+[`dsh-knowledge`](https://github.com/Soren-ABT/dsh-knowledge) DSH plugin** —
+not DeepSeek Harness itself. The plugin keeps its chunks in a SQLite file at
+`~/.dsh/storages/knowledge-chunks.sqlite`, and the tool queries it with the
+same recipe the plugin uses:
 
 1. dense scan over the stored (L2-normalised) vectors,
 2. BM25 over the FTS5 trigram index,
@@ -135,9 +136,10 @@ plugin itself uses:
 4. an optional cross-encoder pass.
 
 The database is opened **read-only**, so a running knowledge plugin is
-never disturbed. Point at it with `--knowledge-db` or the
-`MEMSEARCH_KNOWLEDGE_DB` environment variable; when no store is
-configured the tool is not advertised at all.
+never disturbed. The store is **auto-detected** at the standard location:
+if the file exists, the tool is advertised; on machines without the
+plugin, the tool is simply absent. `--knowledge-db` or the
+`MEMSEARCH_KNOWLEDGE_DB` environment variable override the location.
 
 ## Relationship to the plugins
 

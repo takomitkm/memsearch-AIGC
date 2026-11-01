@@ -47,7 +47,9 @@ class FakeMemSearch:
 
 
 @pytest.fixture
-def server() -> MCPServer:
+def server(monkeypatch) -> MCPServer:
+    # Hermetic: never pick up a real dsh-knowledge store on the test machine.
+    monkeypatch.setattr("memsearch.mcp_server._auto_knowledge_db", lambda: "")
     return MCPServer(config=MemSearchConfig(), collection="test_collection")
 
 
@@ -83,6 +85,22 @@ def test_tools_list_exposes_the_core_tools(server: MCPServer) -> None:
     for tool in reply["result"]["tools"]:
         assert tool["description"]
         assert tool["inputSchema"]["type"] == "object"
+
+
+def test_knowledge_tool_absent_without_store(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("memsearch.mcp_server.DEFAULT_KNOWLEDGE_DB", tmp_path / "missing.sqlite")
+    srv = MCPServer(config=MemSearchConfig(), collection="test_collection")
+    names = [t["name"] for t in _request(srv, "tools/list")["result"]["tools"]]
+    assert "knowledge_search" not in names
+
+
+def test_knowledge_tool_auto_detected_with_default_store(monkeypatch, tmp_path) -> None:
+    store = tmp_path / "knowledge-chunks.sqlite"
+    store.write_bytes(b"")
+    monkeypatch.setattr("memsearch.mcp_server.DEFAULT_KNOWLEDGE_DB", store)
+    srv = MCPServer(config=MemSearchConfig(), collection="test_collection")
+    names = [t["name"] for t in _request(srv, "tools/list")["result"]["tools"]]
+    assert "knowledge_search" in names
 
 
 def test_knowledge_search_is_only_advertised_with_a_store(tmp_path: Path) -> None:

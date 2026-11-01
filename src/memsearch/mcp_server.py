@@ -52,6 +52,18 @@ SERVER_VERSION = _package_version()
 #: Environment variable pointing at a DeepSeek Harness knowledge store.
 KNOWLEDGE_DB_ENV = "MEMSEARCH_KNOWLEDGE_DB"
 
+#: Default store location written by the third-party ``dsh-knowledge`` plugin
+#: (https://github.com/Soren-ABT/dsh-knowledge).  Not part of DeepSeek Harness
+#: itself — the tool is only exposed when this file (or an explicit override)
+#: exists.
+DEFAULT_KNOWLEDGE_DB = Path("~/.dsh/storages/knowledge-chunks.sqlite")
+
+
+def _auto_knowledge_db() -> str:
+    """Return the default dsh-knowledge store path if it exists, else ``""``."""
+    expanded = DEFAULT_KNOWLEDGE_DB.expanduser()
+    return str(expanded) if expanded.is_file() else ""
+
 
 def _reconfigure_streams() -> None:
     """Force UTF-8 on the stdio streams.
@@ -85,7 +97,7 @@ class MCPServer:
         self._cfg = config
         self._collection = collection or config.milvus.collection
         self._max_content_chars = max_content_chars
-        self._knowledge_db = knowledge_db or os.environ.get(KNOWLEDGE_DB_ENV) or ""
+        self._knowledge_db = knowledge_db or os.environ.get(KNOWLEDGE_DB_ENV) or _auto_knowledge_db()
         self._ms = None
         self._store = None
 
@@ -282,8 +294,9 @@ class MCPServer:
             raise ValueError("query is required")
         if not self._knowledge_db:
             raise ValueError(
-                "no knowledge store configured: pass --knowledge-db "
-                f"{Path('~/.dsh/storages/knowledge-chunks.sqlite')} or set {KNOWLEDGE_DB_ENV}"
+                "no knowledge store found: install the dsh-knowledge plugin "
+                f"(its store at {DEFAULT_KNOWLEDGE_DB} is picked up automatically), "
+                f"pass --knowledge-db, or set {KNOWLEDGE_DB_ENV}"
             )
         limit = int(args.get("limit") or 5)
         base_id = args.get("base_id") or None
@@ -432,8 +445,8 @@ class MCPServer:
                 {
                     "name": "knowledge_search",
                     "description": (
-                        "Hybrid search (dense vectors + BM25) over a DeepSeek Harness "
-                        "knowledge store, with cross-encoder reranking."
+                        "Hybrid search (dense vectors + BM25) over the knowledge store of the "
+                        "third-party dsh-knowledge DSH plugin, with cross-encoder reranking."
                     ),
                     "inputSchema": {
                         "type": "object",
