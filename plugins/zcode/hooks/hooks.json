@@ -1,0 +1,43 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "process",
+            "command": "bash",
+            "args": ["${ZCODE_PLUGIN_ROOT}/hooks/session-start.sh"],
+            "timeoutMs": 60000,
+            "onError": "allow"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "process",
+            "command": "bash",
+            "args": ["${ZCODE_PLUGIN_ROOT}/hooks/user-prompt-submit.sh"],
+            "timeoutMs": 15000,
+            "onError": "allow"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "process",
+            "command": "bash",
+            "args": ["${ZCODE_PLUGIN_ROOT}/hooks/stop.sh"],
+            "timeoutMs": 15000,
+            "onError": "allow"
+          }
+        ]
+      }
+    ]
+  }
+}
