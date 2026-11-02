@@ -1,5 +1,10 @@
 # memsearch `serve`：官方常驻服务模式（#780）
 
+> **状态（2026-11-03）：全部步骤已实现**于 `Individual-mcp` 分支——§8 的 1-8 步
+> 完成；§5.4 的 `--daemonize` 刻意偏离（仅前台，文档已注明）；`--exit-code-on-down`
+> 以环境变量 `MEMSEARCH_EXIT_CODE_ON_DOWN` 实现而非 CLI 选项。待办：校机全量测试
+> （pytest + ruff）与真实崩溃的端到端验证。
+
 基于 `memsearch mcp`（#834）已有代码的架构扩展。**低耦合、高内聚、多模块化**，遵循原 repo 风格（asyncio、click、dataclass、`_run`/`_safe_resolve_config` 模式）。
 
 ## 1. 目标与范围
