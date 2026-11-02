@@ -69,3 +69,17 @@ def test_dead_daemon_exits_with_code_two(monkeypatch) -> None:
     result = CliRunner().invoke(cli, ["search", "hello"])
     assert result.exit_code == 2
     assert "daemon" in result.output.lower()
+
+
+@pytest.mark.parametrize("command", ["watch", "compact", "reset"])
+def test_store_commands_refuse_to_fight_a_daemon(monkeypatch, command) -> None:
+    """watch/compact/reset open the store directly; the daemon owns the lock."""
+    fake = FakeClient({"pong": True})
+    monkeypatch.setattr(client_mod, "daemon_client_if_alive", lambda collection: fake)
+    args = [command]
+    if command == "watch":
+        args.append("pyproject.toml")  # click.Path(exists=True); guard fires before MemSearch
+    result = CliRunner().invoke(cli, args)
+    assert result.exit_code == 3, result.output
+    assert "daemon owns collection" in result.output
+    assert "memsearch serve stop" in result.output

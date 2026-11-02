@@ -87,6 +87,29 @@ def _daemon_call(client, method: str, params: dict):
         raise SystemExit(EXIT_ERROR) from None
 
 
+def _refuse_if_daemon_owns(cfg, command: str) -> None:
+    """Watch/compact/reset open the store directly — a running daemon owns it.
+
+    Milvus Lite's file lock is exclusive, so these commands cannot run beside
+    the daemon; watch would also be redundant (the daemon already watches the
+    indexed paths). Exit 3 (EXIT_ALREADY_RUNNING) with a hint instead of a raw
+    Milvus lock error.
+    """
+    from .serve.client import daemon_client_if_alive
+    from .serve.exit_codes import EXIT_ALREADY_RUNNING
+
+    client = daemon_client_if_alive(cfg.milvus.collection)
+    if client is not None:
+        click.echo(
+            f"Error: a 'memsearch serve' daemon owns collection "
+            f"'{cfg.milvus.collection}' ({client.endpoint}) — it already indexes "
+            f"and watches, so '{command}' cannot open the store. "
+            "Stop it first: memsearch serve stop",
+            err=True,
+        )
+        raise SystemExit(EXIT_ALREADY_RUNNING) from None
+
+
 def _safe_resolve_config(
     overrides: dict | None = None,
     *,
@@ -1020,6 +1043,7 @@ def watch(
         ),
         default_overrides=_build_cli_overrides(collection=default_collection),
     )
+    _refuse_if_daemon_owns(cfg, "watch")
     ms = None
     watcher = None
     try:
@@ -1156,6 +1180,7 @@ def compact(
         ),
         default_overrides=_build_cli_overrides(collection=default_collection),
     )
+    _refuse_if_daemon_owns(cfg, "compact")
 
     prompt_template = prompt
     # Resolve prompt: CLI --prompt > prompts.compact > compact.prompt_file > built-in
@@ -1344,6 +1369,7 @@ def reset(
         ),
         default_overrides=_build_cli_overrides(collection=default_collection),
     )
+    _refuse_if_daemon_owns(cfg, "reset")
     store = None
     try:
         store = MilvusStore(
