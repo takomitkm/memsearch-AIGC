@@ -85,6 +85,8 @@ def test_store_commands_refuse_to_fight_a_daemon(monkeypatch, command) -> None:
     args = [command]
     if command == "watch":
         args.append("pyproject.toml")  # click.Path(exists=True); guard fires before MemSearch
+    if command == "reset":
+        args.append("--yes")  # skip the confirmation; the guard fires before the store opens
     result = CliRunner().invoke(cli, args)
     assert result.exit_code == 3, result.output
     assert "daemon owns collection" in result.output

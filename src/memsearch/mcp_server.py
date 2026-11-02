@@ -246,17 +246,19 @@ class MCPServer:
         paths = [str(p) for p in raw if str(p).strip()]
         if not paths:
             raise ValueError("paths is required (a markdown file or a directory)")
-        missing = [p for p in paths if not Path(p).expanduser().exists()]
-        if missing:
-            raise ValueError(f"path not found: {', '.join(missing)}")
         force = bool(args.get("force"))
 
+        # Daemon routing comes first: the daemon re-validates paths itself and
+        # its answer is authoritative for the routed call.
         if self._daemon_client is not None:
             data = self._daemon_call(
                 "index",
                 {"paths": [str(Path(p).expanduser().resolve()) for p in paths], "force": force},
             )
             return f"indexed {data['indexed_chunks']} chunk(s) from {', '.join(paths)}"
+        missing = [p for p in paths if not Path(p).expanduser().exists()]
+        if missing:
+            raise ValueError(f"path not found: {', '.join(missing)}")
 
         import asyncio
 
@@ -373,15 +375,17 @@ class MCPServer:
         if not query or not documents:
             raise ValueError("query and documents are required")
 
-        model = self._cfg.reranker.model or ""
-        if not model.startswith("remote:"):
-            raise ValueError(
-                "no remote reranker configured: set reranker.model to 'remote:<model>' in ~/.memsearch/config.toml"
-            )
+        # Daemon routing comes first: the daemon owns its own reranker config,
+        # so the local remote:<model> requirement does not apply to it.
         if self._daemon_client is not None:
             data = self._daemon_call("rerank", {"query": query, "documents": documents})
             return "\n".join(
                 f"{i}. score={r['score']:.6f}  {r['document']}" for i, r in enumerate(data["results"][: len(documents)])
+            )
+        model = self._cfg.reranker.model or ""
+        if not model.startswith("remote:"):
+            raise ValueError(
+                "no remote reranker configured: set reranker.model to 'remote:<model>' in ~/.memsearch/config.toml"
             )
         from .remote_reranker import RemoteReranker
 

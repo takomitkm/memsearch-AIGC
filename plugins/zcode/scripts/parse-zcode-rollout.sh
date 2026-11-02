@@ -30,7 +30,16 @@ if [ "$LINE_COUNT" -eq 0 ]; then
   exit 0
 fi
 
-python3 - "$ROLLOUT_PATH" <<'PY'
+PYTHON_BIN="$(command -v python3 || command -v python || true)"
+if [ -z "$PYTHON_BIN" ] && command -v py >/dev/null 2>&1; then
+  PYTHON_BIN="py -3"
+fi
+if [ -z "$PYTHON_BIN" ]; then
+  echo "ERROR: no python found on PATH (tried python3, python, py)" >&2
+  exit 1
+fi
+# shellcheck disable=SC2086  # "py -3" intentionally word-splits
+$PYTHON_BIN - "$ROLLOUT_PATH" <<'PY'
 import json
 import sys
 
