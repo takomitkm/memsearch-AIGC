@@ -434,6 +434,16 @@ def search(
     type=int,
     help="Truncate tool output content to this many characters.",
 )
+@click.option(
+    "--backend",
+    type=click.Choice(["stdlib", "fastmcp"]),
+    default="stdlib",
+    show_default=True,
+    help=(
+        "Protocol implementation: 'stdlib' is the built-in zero-dependency server; "
+        "'fastmcp' uses the optional third-party fastmcp package."
+    ),
+)
 def mcp(
     provider: str | None,
     model: str | None,
@@ -447,6 +457,7 @@ def mcp(
     reranker_model: str | None,
     knowledge_db: str | None,
     max_content_chars: int,
+    backend: str,
 ) -> None:
     """Run an MCP server on stdio that exposes memsearch tools.
 
@@ -456,8 +467,15 @@ def mcp(
         [mcp_servers.memsearch]
         command = "memsearch"
         args = ["mcp"]
+
+    Use ``--backend fastmcp`` to serve the same tools through the optional
+    third-party fastmcp package instead of the built-in implementation
+    (install it with ``pip install 'memsearch[fastmcp]'``).
     """
-    from .mcp_server import serve
+    if backend == "fastmcp":
+        from .mcp_fastmcp import serve_fastmcp as serve
+    else:
+        from .mcp_server import serve
 
     cfg = _safe_resolve_config(
         _build_cli_overrides(

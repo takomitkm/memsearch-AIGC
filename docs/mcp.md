@@ -53,6 +53,30 @@ mcpServers:
   encoding is the console code page (GBK on a zh-CN machine), which
   corrupts the JSON payload and the Chinese text it carries.
 
+## Backends
+
+Two implementations of the same server exist; the tools and their arguments
+are identical either way.
+
+| `--backend` | Implementation | Dependencies |
+|---|---|---|
+| `stdlib` (default) | `src/memsearch/mcp_server.py`, hand-rolled JSON-RPC | none (standard library only) |
+| `fastmcp` | `src/memsearch/mcp_fastmcp.py`, built on the third-party [`fastmcp`](https://github.com/jlowin/fastmcp) package | `pip install 'memsearch[fastmcp]'` |
+
+`stdlib` stays the default because it needs no third-party package: it can be
+started by any Python 3.10+ interpreter that has memsearch importable, and it
+is the variant that can be patched into an installed copy of the package.
+
+`fastmcp` derives each tool's `inputSchema` from the function signature and
+docstring and owns the protocol plumbing; choose it when the deployment
+already has fastmcp or needs its extras (HTTP transports, auth, middleware,
+composition). Both call the same `MCPServer` tool implementations.
+
+```bash
+pip install 'memsearch[fastmcp]'
+memsearch mcp --backend fastmcp
+```
+
 ## Tools
 
 | Tool | What it does |
