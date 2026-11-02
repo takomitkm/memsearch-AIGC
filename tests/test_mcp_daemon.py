@@ -114,8 +114,11 @@ def test_rerank_routes_and_keeps_format(daemon_server) -> None:
 def test_index_routes_and_keeps_format(daemon_server) -> None:
     server, fake = daemon_server
     out = server.tool_memory_index({"paths": ["x.md"], "force": False})
-    assert out == "indexed 3 chunk(s) from x.md"
-    assert fake.calls[0][1]["paths"] == ["x.md"]
+    # The routed call resolves the path before handing it to the daemon.
+    assert out.startswith("indexed 3 chunk(s) from ")
+    assert "x.md" in out
+    sent = fake.calls[0][1]["paths"][0]
+    assert sent.endswith("x.md") and len(sent) > len("x.md")  # resolved absolute path
 
 
 def test_knowledge_callbacks_ride_the_daemon(daemon_server) -> None:
