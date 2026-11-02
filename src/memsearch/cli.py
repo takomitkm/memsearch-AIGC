@@ -67,15 +67,21 @@ def _daemon_call(client, method: str, params: dict):
     result); a typed failure from the daemon exits 1 with its message, like the
     local commands do for their own errors.
     """
+    import os
+
     from .serve.client import DaemonDownError
     from .serve.exit_codes import EXIT_DAEMON_DOWN, EXIT_ERROR
     from .serve.protocol import RpcError
 
     try:
+        down_code = int(os.environ.get("MEMSEARCH_EXIT_CODE_ON_DOWN", EXIT_DAEMON_DOWN))
+    except ValueError:
+        down_code = EXIT_DAEMON_DOWN
+    try:
         return _run(client.call(method, params))
     except DaemonDownError as exc:
         click.echo(f"Error: {exc}", err=True)
-        raise SystemExit(EXIT_DAEMON_DOWN) from None
+        raise SystemExit(down_code) from None
     except RpcError as exc:
         click.echo(f"Error: {exc.message}", err=True)
         raise SystemExit(EXIT_ERROR) from None
@@ -542,6 +548,17 @@ def search(
         "'fastmcp' uses the optional third-party fastmcp package."
     ),
 )
+@click.option(
+    "--daemon",
+    "daemon",
+    is_flag=True,
+    default=False,
+    help=(
+        "Route store-backed tools through a running 'memsearch serve' daemon "
+        "(the daemon owns the Milvus lock and the warm model). The daemon must "
+        "be up when the server starts."
+    ),
+)
 def mcp(
     provider: str | None,
     model: str | None,
@@ -556,6 +573,7 @@ def mcp(
     knowledge_db: str | None,
     max_content_chars: int,
     backend: str,
+    daemon: bool,
 ) -> None:
     """Run an MCP server on stdio that exposes memsearch tools.
 
@@ -569,7 +587,13 @@ def mcp(
     Use ``--backend fastmcp`` to serve the same tools through the optional
     third-party fastmcp package instead of the built-in implementation
     (install it with ``pip install 'memsearch[fastmcp]'``).
+
+    Use ``--daemon`` to route store-backed tools through a running
+    'memsearch serve' daemon (issue #780) instead of opening the store here.
     """
+    from .serve.client import DaemonDownError
+    from .serve.exit_codes import EXIT_DAEMON_DOWN
+
     if backend == "fastmcp":
         from .mcp_fastmcp import serve_fastmcp as serve
     else:
@@ -589,12 +613,17 @@ def mcp(
         ),
         default_overrides=_build_cli_overrides(collection=default_collection),
     )
-    serve(
-        config=cfg,
-        collection=cfg.milvus.collection,
-        knowledge_db=knowledge_db,
-        max_content_chars=max_content_chars,
-    )
+    try:
+        serve(
+            config=cfg,
+            collection=cfg.milvus.collection,
+            knowledge_db=knowledge_db,
+            max_content_chars=max_content_chars,
+            daemon=daemon,
+        )
+    except DaemonDownError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        raise SystemExit(EXIT_DAEMON_DOWN) from None
 
 
 
@@ -668,6 +697,7 @@ def serve() -> None:
 @click.option("--tcp-port", default=None, type=int, help="Loopback TCP port (default on Windows).")
 @click.option("--http-port", default=None, type=int, help="Also serve POST /rpc and GET /health on this port.")
 @click.option("--pidfile", "pidfile_path", default=None, type=click.Path(path_type=Path), help="PID file (default: per-collection under ~/.memsearch).")
+@click.option("--log-file", "log_file", default=None, type=click.Path(path_type=Path), help="Write daemon logs (INFO and up) to this file instead of stderr.")
 def serve_start(
     paths: tuple[str, ...],
     provider: str | None,
@@ -683,8 +713,15 @@ def serve_start(
     tcp_port: int | None,
     http_port: int | None,
     pidfile_path: Path | None,
+    log_file: Path | None,
 ) -> None:
     """Start the daemon in the foreground (run it under tmux/screen to detach)."""
+    import logging
+
+    if log_file is not None:
+        logging.basicConfig(filename=str(log_file), level=logging.INFO)
+    else:
+        logging.basicConfig(level=logging.INFO)
     from .serve.daemon import run_daemon
     from .serve.exit_codes import EXIT_ALREADY_RUNNING
     from .serve.pidfile import DaemonAlreadyRunningError

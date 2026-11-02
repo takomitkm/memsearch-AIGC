@@ -58,6 +58,7 @@ def build_server(
     knowledge_db: str | None = None,
     max_content_chars: int = 2000,
     backend: MCPServer | None = None,
+    daemon: bool = False,
 ):
     """Return a configured ``fastmcp.FastMCP`` instance exposing memsearch tools.
 
@@ -73,6 +74,7 @@ def build_server(
         collection=collection,
         knowledge_db=knowledge_db,
         max_content_chars=max_content_chars,
+        daemon=daemon,
     )
 
     def call(handler, **arguments: Any) -> str:
@@ -176,6 +178,7 @@ def serve_fastmcp(
     collection: str | None = None,
     knowledge_db: str | None = None,
     max_content_chars: int = 2000,
+    daemon: bool = False,
 ) -> None:
     """Run the FastMCP-backed server over stdio until the client disconnects."""
     _reconfigure_streams()
@@ -184,6 +187,7 @@ def serve_fastmcp(
         collection=collection,
         knowledge_db=knowledge_db,
         max_content_chars=max_content_chars,
+        daemon=daemon,
     )
     mcp = build_server(
         config=config,

@@ -765,6 +765,35 @@ claude mcp add memsearch -- memsearch mcp
 
 ---
 
+## `memsearch serve`
+
+Resident daemon for one collection (issue #780). It owns the Milvus store
+and the embedding model, so repeated queries stay warm (~50-100 ms instead
+of the ~2.2 s model reload), the Milvus Lite file lock has a single owner,
+and a dead service exits with code 2 instead of returning an empty result.
+
+```bash
+memsearch serve start ~/notes   # foreground; run under tmux/screen to detach
+memsearch serve status          # endpoint, collection, uptime, watcher state
+memsearch serve stop            # graceful shutdown
+```
+
+When a daemon is alive for the configured collection, `search`, `stats`,
+`expand` and `index` route through it automatically — which is also how the
+platform plugins (claude-code, codex, dsh, openclaw, opencode) get the warm
+daemon without any changes. Bypass it with `--no-daemon` or
+`MEMSEARCH_NO_DAEMON=1`; any store/provider override (`--milvus-uri`,
+`--model`, …) also forces the local path. A daemon dying between probe and
+call exits with code 2 — never with an empty result.
+
+`start` options: `--socket PATH` (Unix), `--tcp-port PORT`,
+`--http-port PORT` (adds `POST /rpc` + `GET /health` for non-Python
+clients), `--pidfile PATH`, `--log-file PATH`.
+
+> 📖 Full guide: [Serve daemon](serve.md)
+
+---
+
 ## `memsearch transcript`
 
 > 🔌 **Plugin command.** This command is part of the [platform plugins](platforms/index.md)' three-level progressive disclosure workflow (`search` → `expand` → `transcript`), but works as a standalone CLI tool for any JSONL transcript.

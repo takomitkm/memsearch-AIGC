@@ -9,6 +9,17 @@ Transport
 stdio, JSON-RPC 2.0, one JSON object per line, UTF-8.  MCP deliberately
 does *not* use LSP-style ``Content-Length`` framing on stdio.
 
+Backend
+-------
+By default the tools open the configured Milvus store directly.  With
+``memsearch mcp --daemon`` they route through a running ``memsearch serve``
+daemon (issue #780) instead: the daemon owns the Milvus Lite file lock and
+the warm embedding model, so MCP clients and CLI commands share one resident
+process.  The daemon must be up when the server starts; if it dies later the
+tools return ``isError`` with the daemon-down message and recover once it is
+restarted.  ``knowledge_search`` stays local either way — it reads the
+dsh-knowledge plugin's SQLite store, which does not contend for the lock.
+
 Usage
 -----
 ::
@@ -32,6 +43,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import MemSearchConfig, memsearch_kwargs_from_config
+from .serve.client import DaemonDownError, ThinClient
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "memsearch"
@@ -106,6 +118,7 @@ class MCPServer:
         collection: str | None = None,
         knowledge_db: str | None = None,
         max_content_chars: int = 2000,
+        daemon: bool = False,
     ) -> None:
         self._cfg = config
         self._collection = collection or config.milvus.collection
@@ -113,6 +126,14 @@ class MCPServer:
         self._knowledge_db = knowledge_db or os.environ.get(KNOWLEDGE_DB_ENV) or _auto_knowledge_db()
         self._ms = None
         self._store = None
+        self._daemon_client: ThinClient | None = None
+        if daemon:
+            # Fail fast: an MCP client spawning this server should see the
+            # daemon-down exit immediately, not a server full of dead tools.
+            client = ThinClient(collection=self._collection)
+            if not client.is_alive():
+                raise DaemonDownError(client.endpoint)
+            self._daemon_client = client
 
     # ------------------------------------------------------------------
     # lazily created resources
@@ -120,6 +141,8 @@ class MCPServer:
 
     def _memsearch(self):
         """Return (and cache) a MemSearch instance for the configured collection."""
+        if self._daemon_client is not None:
+            raise RuntimeError("daemon mode: the store is owned by 'memsearch serve'")
         if self._ms is None:
             from .core import MemSearch
 
@@ -130,6 +153,8 @@ class MCPServer:
 
     def _get_store(self):
         """Return (and cache) a Milvus store for read-only operations."""
+        if self._daemon_client is not None:
+            raise RuntimeError("daemon mode: the store is owned by 'memsearch serve'")
         if self._store is None:
             from .store import MilvusStore
 
@@ -164,6 +189,19 @@ class MCPServer:
         self._store = None
 
     # ------------------------------------------------------------------
+    # daemon routing
+    # ------------------------------------------------------------------
+
+    def _daemon_call(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Run one serve-daemon method; daemon-down becomes a tool error."""
+        import asyncio
+
+        try:
+            return asyncio.run(self._daemon_client.call(method, params))
+        except DaemonDownError as exc:
+            raise RuntimeError(str(exc)) from None
+
+    # ------------------------------------------------------------------
     # tool implementations
     # ------------------------------------------------------------------
 
@@ -176,7 +214,14 @@ class MCPServer:
 
         import asyncio
 
-        results = asyncio.run(self._memsearch().search(query, top_k=limit, source_prefix=source_prefix))
+        if self._daemon_client is not None:
+            data = self._daemon_call(
+                "search",
+                {"query": query, "top_k": limit, "source_prefix": source_prefix},
+            )
+            results = data.get("results") or []
+        else:
+            results = asyncio.run(self._memsearch().search(query, top_k=limit, source_prefix=source_prefix))
         if not results:
             return "(no match)"
 
@@ -206,6 +251,13 @@ class MCPServer:
             raise ValueError(f"path not found: {', '.join(missing)}")
         force = bool(args.get("force"))
 
+        if self._daemon_client is not None:
+            data = self._daemon_call(
+                "index",
+                {"paths": [str(Path(p).expanduser().resolve()) for p in paths], "force": force},
+            )
+            return f"indexed {data['indexed_chunks']} chunk(s) from {', '.join(paths)}"
+
         import asyncio
 
         from .core import MemSearch
@@ -221,6 +273,16 @@ class MCPServer:
         return f"indexed {count} chunk(s) from {', '.join(paths)}"
 
     def tool_memory_stats(self, args: dict[str, Any]) -> str:
+        if self._daemon_client is not None:
+            data = self._daemon_call("stats", {})
+            lines = [
+                f"collection: {data['collection']}",
+                f"Total indexed chunks: {data['total_chunks']}",
+            ]
+            if data.get("source_list"):
+                lines.append(f"source files: {data['sources']}")
+                lines.extend(f"  {s}" for s in data["source_list"])
+            return "\n".join(lines)
         count = self._get_store().count()
         lines = [f"collection: {self._collection}", f"Total indexed chunks: {count}"]
         try:
@@ -237,6 +299,12 @@ class MCPServer:
         if not chunk_hash:
             raise ValueError("chunk_id is required")
         lines_ctx = args.get("lines")
+        if self._daemon_client is not None:
+            data = self._daemon_call("expand", {"chunk_id": chunk_hash, "lines": lines_ctx})
+            head = f"Source: {data['source']} (lines {data['first_line']}-{data['last_line']})"
+            if data.get("heading"):
+                head += f"\nHeading: {data['heading']}"
+            return f"{head}\n\n{data['content']}"
         chunks = self._get_store().query(filter_expr=f'chunk_hash == "{chunk_hash}"')
         if not chunks:
             return f"chunk not found: {chunk_hash}"
@@ -276,6 +344,9 @@ class MCPServer:
 
         import asyncio
 
+        if self._daemon_client is not None:
+            payload = self._daemon_call("embed", {"texts": texts, "include_vector": include})
+            return json.dumps(payload, ensure_ascii=False, indent=1)
         provider = self._memsearch()._embedder
         vectors = asyncio.run(provider.embed(texts))
         include = bool(args.get("include_vector"))
@@ -306,6 +377,12 @@ class MCPServer:
         if not model.startswith("remote:"):
             raise ValueError(
                 "no remote reranker configured: set reranker.model to 'remote:<model>' in ~/.memsearch/config.toml"
+            )
+        if self._daemon_client is not None:
+            data = self._daemon_call("rerank", {"query": query, "documents": documents})
+            return "\n".join(
+                f"{i}. score={r['score']:.6f}  {r['document']}"
+                for i, r in enumerate(data["results"][: len(documents)])
             )
         from .remote_reranker import RemoteReranker
 
@@ -355,12 +432,25 @@ class MCPServer:
     def _embed_texts(self, texts: list[str]) -> list[list[float]]:
         import asyncio
 
+        if self._daemon_client is not None:
+            # knowledge_search stays local (it reads the dsh-knowledge SQLite,
+            # which does not contend for the Milvus lock) but its embedding
+            # callbacks still ride the daemon so the model stays warm there.
+            payload = self._daemon_call("embed", {"texts": texts, "include_vector": True})
+            return [item["embedding"] for item in payload["vectors"]]
         return asyncio.run(self._memsearch()._embedder.embed(texts))
 
     def _rerank_documents(self, query: str, documents: list[str]) -> list[float] | None:
         model = self._cfg.reranker.model or ""
         if not model.startswith("remote:"):
             return None
+        if self._daemon_client is not None:
+            try:
+                payload = self._daemon_call("rerank", {"query": query, "documents": documents})
+            except Exception:
+                return None
+            scores = {r["index"]: float(r["score"]) for r in payload.get("results", [])}
+            return [scores.get(i, 0.0) for i in range(len(documents))]
         try:
             from .remote_reranker import RemoteReranker
 
@@ -578,6 +668,7 @@ def serve(
     collection: str | None = None,
     knowledge_db: str | None = None,
     max_content_chars: int = 2000,
+    daemon: bool = False,
     stdin=None,
     stdout=None,
     server: MCPServer | None = None,
@@ -596,6 +687,7 @@ def serve(
             collection=collection,
             knowledge_db=knowledge_db,
             max_content_chars=max_content_chars,
+            daemon=daemon,
         )
     try:
         for line in source:

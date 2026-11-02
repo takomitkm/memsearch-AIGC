@@ -33,11 +33,13 @@ from pathlib import Path
 from typing import Any
 
 from .protocol import (
+    INDEX_FAILED,
     INTERNAL,
     INVALID_PARAMS,
     NOT_FOUND,
     NOT_READY,
     RpcError,
+    SHUTTING_DOWN,
 )
 
 
@@ -146,7 +148,10 @@ class ServeService:
             # Reindex the daemon's own roots on its long-lived MemSearch.
             ms = self._require()
             async with self._index_lock:
-                report = await ms.index_with_report(force=force)
+                try:
+                    report = await ms.index_with_report(force=force)
+                except Exception as exc:
+                    raise RpcError(f"index failed: {type(exc).__name__}: {exc}", INDEX_FAILED) from exc
             return _index_report_dict(self._paths, report, chunks=None)
         if isinstance(raw, str):
             raw = [raw]
@@ -165,7 +170,10 @@ class ServeService:
         ms = MemSearch(**kwargs)
         try:
             async with self._index_lock:
-                count = await ms.index(force=force)
+                try:
+                    count = await ms.index(force=force)
+                except Exception as exc:
+                    raise RpcError(f"index failed: {type(exc).__name__}: {exc}", INDEX_FAILED) from exc
         finally:
             ms.close()
         return {"paths": paths, "indexed_chunks": count, "failed": 0}
@@ -297,7 +305,9 @@ class ServeService:
     # ------------------------------------------------------------------
 
     def _require(self) -> Any:
-        if self._ms is None or self._shutting_down:
+        if self._shutting_down:
+            raise RpcError("daemon is shutting down", SHUTTING_DOWN)
+        if self._ms is None:
             raise RpcError("daemon is not ready", NOT_READY)
         return self._ms
 

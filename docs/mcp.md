@@ -14,7 +14,14 @@ identically whichever way you drive it.
 memsearch mcp                      # honours ~/.memsearch/config.toml
 memsearch mcp -c my_collection     # explicit collection
 memsearch mcp --knowledge-db ~/.dsh/storages/knowledge-chunks.sqlite
+memsearch mcp --daemon             # route store-backed tools through 'memsearch serve'
 ```
+
+With `--daemon` the store-backed tools talk to a running `memsearch serve`
+daemon instead of opening the Milvus store here: one process owns the lock
+and the warm model, shared with the CLI and the platform plugins. The daemon
+must be up at server start; `knowledge_search` stays local either way (it
+reads the dsh-knowledge SQLite store, which does not contend for the lock).
 
 ## Connecting a client
 

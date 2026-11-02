@@ -92,9 +92,9 @@ the subscription id).
 * `index` routed through the daemon does not update the CLI's local
   index-state file (`memsearch index-state` reports the last locally-run
   index).
-* The MCP server (`memsearch mcp`) still opens the store directly; a
-  `--daemon` option is a planned follow-up. Until then, run either the MCP
-  server or the daemon against one collection, not both.
+* `memsearch mcp --daemon` routes the MCP server's store-backed tools through
+  the daemon; without the flag the MCP server opens the store directly, so
+  run either variant or the daemon against one collection — not both.
 * Loopback only, no authentication — do not expose the port.
 * No OS service registration (systemd/launchd/Windows service); start it from
   your supervisor of choice.
