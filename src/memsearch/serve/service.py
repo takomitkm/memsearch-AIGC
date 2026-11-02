@@ -196,7 +196,8 @@ class ServeService:
         chunk = chunks[0]
         lines_ctx = params.get("lines")
         if lines_ctx is not None:
-            n = _positive_int(lines_ctx, default=1, name="lines")
+            # lines=0 is the CLI --no-section view: the chunk block alone.
+            n = _non_negative_int(lines_ctx, default=1, name="lines")
             return await asyncio.to_thread(_expand_windowed, chunk, n)
         return await asyncio.to_thread(_expand_section, chunk)
 
@@ -391,6 +392,18 @@ def _expand_windowed(chunk: dict[str, Any], n: int) -> dict[str, Any]:
         "heading": chunk.get("heading", ""),
         "content": "\n".join(all_lines[ctx_start:ctx_end]),
     }
+
+
+def _non_negative_int(value: Any, *, default: int, name: str) -> int:
+    if value is None:
+        return default
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        raise RpcError(f"{name} must be an integer", INVALID_PARAMS) from None
+    if n < 0:
+        raise RpcError(f"{name} must be >= 0", INVALID_PARAMS)
+    return n
 
 
 def _positive_int(value: Any, *, default: int, name: str) -> int:

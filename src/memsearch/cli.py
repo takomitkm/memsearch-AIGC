@@ -44,6 +44,43 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+def _daemon_client_or_none(collection: str, no_daemon: bool, *overrides):
+    """Return a live thin client when automatic daemon routing applies, else None.
+
+    Routing is refused when the command carries any store/provider override: the
+    daemon owns exactly one store and one model configuration, so honouring a
+    different ``--milvus-uri``/``--model`` through it would silently answer from
+    the wrong place. ``--no-daemon`` (or ``MEMSEARCH_NO_DAEMON``) forces the
+    local path.
+    """
+    if no_daemon or any(o is not None for o in overrides):
+        return None
+    from .serve.client import daemon_client_if_alive
+
+    return daemon_client_if_alive(collection)
+
+
+def _daemon_call(client, method: str, params: dict):
+    """Run one daemon method with the CLI's error contract.
+
+    A dead daemon exits 2 (issue #780: service unavailable, never an empty
+    result); a typed failure from the daemon exits 1 with its message, like the
+    local commands do for their own errors.
+    """
+    from .serve.client import DaemonDownError
+    from .serve.exit_codes import EXIT_DAEMON_DOWN, EXIT_ERROR
+    from .serve.protocol import RpcError
+
+    try:
+        return _run(client.call(method, params))
+    except DaemonDownError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        raise SystemExit(EXIT_DAEMON_DOWN) from None
+    except RpcError as exc:
+        click.echo(f"Error: {exc.message}", err=True)
+        raise SystemExit(EXIT_ERROR) from None
+
+
 def _safe_resolve_config(
     overrides: dict | None = None,
     *,
@@ -238,6 +275,13 @@ def cli() -> None:
     default=None,
     help="Best-effort collection metadata written on creation; some backends may not return it.",
 )
+@click.option(
+    "--no-daemon",
+    "no_daemon",
+    is_flag=True,
+    default=False,
+    help="Ignore a running 'memsearch serve' daemon and use the local store.",
+)
 def index(
     paths: tuple[str, ...],
     provider: str | None,
@@ -254,6 +298,7 @@ def index(
     force: bool,
     max_chunk_size: int | None,
     description: str | None,
+    no_daemon: bool,
 ) -> None:
     """Index markdown files from PATHS."""
     from .core import MemSearch
@@ -273,6 +318,31 @@ def index(
         ),
         default_overrides=_build_cli_overrides(collection=default_collection),
     )
+    client = _daemon_client_or_none(
+        cfg.milvus.collection,
+        no_daemon,
+        provider,
+        model,
+        batch_size,
+        base_url,
+        api_key,
+        milvus_uri,
+        milvus_token,
+        max_chunk_size,
+        ignore_files or None,
+        exclude_patterns or None,
+        description,
+    )
+    if client is not None:
+        # The daemon owns the store; its indexer records no CLI index-state file,
+        # so `index-state` reports the last locally-run index only.
+        data = _daemon_call(
+            client,
+            "index",
+            {"paths": [str(Path(p).expanduser().resolve()) for p in paths], "force": force},
+        )
+        click.echo(f"Indexed {data['indexed_chunks']} chunks.")
+        return
     ms = None
     try:
         record_index_started(
@@ -339,6 +409,13 @@ def index(
 @_common_options
 @click.option("--reranker-model", default=None, help="Cross-encoder model for reranking (empty string disables).")
 @click.option("--json-output", "-j", is_flag=True, help="Output as JSON.")
+@click.option(
+    "--no-daemon",
+    "no_daemon",
+    is_flag=True,
+    default=False,
+    help="Ignore a running 'memsearch serve' daemon and use the local store.",
+)
 def search(
     query: str,
     top_k: int | None,
@@ -354,6 +431,7 @@ def search(
     milvus_token: str | None,
     reranker_model: str | None,
     json_output: bool,
+    no_daemon: bool,
 ) -> None:
     """Search indexed memory for QUERY."""
     from .core import MemSearch
@@ -372,10 +450,30 @@ def search(
         ),
         default_overrides=_build_cli_overrides(collection=default_collection),
     )
+    client = _daemon_client_or_none(
+        cfg.milvus.collection,
+        no_daemon,
+        provider,
+        model,
+        batch_size,
+        base_url,
+        api_key,
+        milvus_uri,
+        milvus_token,
+        reranker_model,
+    )
     ms = None
     try:
-        ms = MemSearch(**_cfg_to_memsearch_kwargs(cfg))
-        results = _run(ms.search(query, top_k=top_k or 5, source_prefix=source_prefix))
+        if client is not None:
+            data = _daemon_call(
+                client,
+                "search",
+                {"query": query, "top_k": top_k or 5, "source_prefix": source_prefix},
+            )
+            results = data.get("results") or []
+        else:
+            ms = MemSearch(**_cfg_to_memsearch_kwargs(cfg))
+            results = _run(ms.search(query, top_k=top_k or 5, source_prefix=source_prefix))
         if json_output:
             click.echo(json.dumps(results, indent=2, ensure_ascii=False))
         else:
@@ -499,6 +597,163 @@ def mcp(
     )
 
 
+
+def _echo_expand_result(
+    json_output: bool,
+    chunk_hash: str,
+    source: str,
+    heading: str,
+    expanded: str,
+    expanded_start: int,
+    expanded_end: int,
+) -> None:
+    """Print one expand result identically for the local and daemon paths."""
+    import re
+
+    anchor_match = re.search(
+        r"<!--\s*session:(\S+)\s+turn:(\S+)\s+transcript:(\S+)\s*-->",
+        expanded,
+    )
+    anchor = {}
+    if anchor_match:
+        anchor = {
+            "session": anchor_match.group(1),
+            "turn": anchor_match.group(2),
+            "transcript": anchor_match.group(3),
+        }
+
+    if json_output:
+        result = {
+            "chunk_hash": chunk_hash,
+            "source": source,
+            "heading": heading,
+            "start_line": expanded_start,
+            "end_line": expanded_end,
+            "content": expanded,
+        }
+        if anchor:
+            result["anchor"] = anchor
+        click.echo(json.dumps(result, indent=2, ensure_ascii=False))
+    else:
+        click.echo(f"Source: {source} (lines {expanded_start}-{expanded_end})")
+        if heading:
+            click.echo(f"Heading: {heading}")
+        if anchor:
+            click.echo(f"Session: {anchor['session']}  Turn: {anchor['turn']}")
+            click.echo(f"Transcript: {anchor['transcript']}")
+        click.echo(f"\n{expanded}")
+
+
+
+# ======================================================================
+# Serve daemon (#780): resident service + thin-client CLI routing
+# ======================================================================
+
+
+@cli.group()
+def serve() -> None:
+    """Run or control the resident `memsearch serve` daemon (#780).
+
+    A running daemon owns the Milvus store and the embedding model, so search
+    and stats stay warm (~50-100 ms instead of the ~2.2 s model reload). When
+    it is alive, the other commands route through it automatically; use
+    --no-daemon on those commands (or MEMSEARCH_NO_DAEMON=1) to bypass.
+    """
+
+
+@serve.command("start")
+@_common_options
+@click.argument("paths", nargs=-1, type=click.Path(exists=True, path_type=Path))
+@click.option("--socket", "socket_path", default=None, type=click.Path(path_type=Path), help="Unix socket path (POSIX default).")
+@click.option("--tcp-port", default=None, type=int, help="Loopback TCP port (default on Windows).")
+@click.option("--http-port", default=None, type=int, help="Also serve POST /rpc and GET /health on this port.")
+@click.option("--pidfile", "pidfile_path", default=None, type=click.Path(path_type=Path), help="PID file (default: per-collection under ~/.memsearch).")
+def serve_start(
+    paths: tuple[str, ...],
+    provider: str | None,
+    model: str | None,
+    batch_size: int | None,
+    base_url: str | None,
+    api_key: str | None,
+    collection: str | None,
+    default_collection: str | None,
+    milvus_uri: str | None,
+    milvus_token: str | None,
+    socket_path: Path | None,
+    tcp_port: int | None,
+    http_port: int | None,
+    pidfile_path: Path | None,
+) -> None:
+    """Start the daemon in the foreground (run it under tmux/screen to detach)."""
+    from .serve.daemon import run_daemon
+    from .serve.exit_codes import EXIT_ALREADY_RUNNING
+    from .serve.pidfile import DaemonAlreadyRunningError
+
+    cfg = _safe_resolve_config(
+        _build_cli_overrides(
+            provider=provider,
+            model=model,
+            batch_size=batch_size,
+            base_url=base_url,
+            api_key=api_key,
+            collection=collection,
+            milvus_uri=milvus_uri,
+            milvus_token=milvus_token,
+        ),
+        default_overrides=_build_cli_overrides(collection=default_collection),
+    )
+    roots = [str(Path(p).expanduser().resolve()) for p in paths] or [str(Path.cwd())]
+    try:
+        rc = _run(
+            run_daemon(
+                cfg,
+                roots,
+                socket_path=socket_path,
+                tcp_port=tcp_port,
+                http_port=http_port,
+                pidfile_path=pidfile_path,
+            )
+        )
+    except DaemonAlreadyRunningError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        raise SystemExit(EXIT_ALREADY_RUNNING) from None
+    except KeyboardInterrupt:  # Windows: no loop.add_signal_handler, so Ctrl+C lands here
+        rc = 0
+    raise SystemExit(rc)
+
+
+@serve.command("status")
+def serve_status() -> None:
+    """Report whether a daemon is running for the configured collection."""
+    from .serve.client import ThinClient
+    from .serve.exit_codes import EXIT_DAEMON_DOWN
+
+    cfg = _safe_resolve_config({})
+    client = ThinClient(collection=cfg.milvus.collection)
+    if not client.is_alive():
+        click.echo(f"daemon: down (no answer at {client.endpoint})", err=True)
+        raise SystemExit(EXIT_DAEMON_DOWN)
+    data = _daemon_call(client, "status", {})
+    click.echo(f"daemon: running at {client.endpoint}")
+    click.echo(f"  collection: {data.get('collection')}")
+    click.echo(f"  uptime: {data.get('uptime_seconds')}s  watching: {data.get('watching')}  subscribers: {data.get('subscribers')}")
+
+
+@serve.command("stop")
+def serve_stop() -> None:
+    """Ask the daemon to shut down gracefully."""
+    from .serve.client import ThinClient
+    from .serve.exit_codes import EXIT_DAEMON_DOWN
+
+    cfg = _safe_resolve_config({})
+    client = ThinClient(collection=cfg.milvus.collection)
+    if not client.is_alive():
+        click.echo(f"daemon: down (nothing to stop at {client.endpoint})", err=True)
+        raise SystemExit(EXIT_DAEMON_DOWN)
+    _daemon_call(client, "shutdown", {})
+    click.echo("daemon: shutdown requested")
+
+
 # ======================================================================
 # Expand command (progressive disclosure L2)
 #
@@ -520,6 +775,13 @@ def mcp(
 @click.option("--lines", "-n", default=None, type=int, help="Show N lines before/after instead of full section.")
 @click.option("--json-output", "-j", is_flag=True, help="Output as JSON.")
 @_common_options
+@click.option(
+    "--no-daemon",
+    "no_daemon",
+    is_flag=True,
+    default=False,
+    help="Ignore a running 'memsearch serve' daemon and use the local store.",
+)
 def expand(
     chunk_hash: str,
     section: bool,
@@ -534,6 +796,7 @@ def expand(
     default_collection: str | None,
     milvus_uri: str | None,
     milvus_token: str | None,
+    no_daemon: bool,
 ) -> None:
     """Expand a memory chunk to show full context. [Claude Code plugin: L2]
 
@@ -558,6 +821,29 @@ def expand(
         ),
         default_overrides=_build_cli_overrides(collection=default_collection),
     )
+    client = _daemon_client_or_none(
+        cfg.milvus.collection,
+        no_daemon,
+        provider,
+        model,
+        batch_size,
+        base_url,
+        api_key,
+        milvus_uri,
+        milvus_token,
+    )
+    if client is not None:
+        data = _daemon_call(client, "expand", {"chunk_id": chunk_hash, "lines": lines})
+        _echo_expand_result(
+            json_output,
+            chunk_hash,
+            data["source"],
+            data.get("heading", ""),
+            data["content"],
+            data["first_line"],
+            data["last_line"],
+        )
+        return
     store = None
     try:
         store = MilvusStore(
@@ -611,41 +897,15 @@ def expand(
                 heading_level,
             )
 
-        # Parse any anchor comments in the expanded text
-        import re
-
-        anchor_match = re.search(
-            r"<!--\s*session:(\S+)\s+turn:(\S+)\s+transcript:(\S+)\s*-->",
+        _echo_expand_result(
+            json_output,
+            chunk_hash,
+            source,
+            heading,
             expanded,
+            expanded_start,
+            expanded_end,
         )
-        anchor = {}
-        if anchor_match:
-            anchor = {
-                "session": anchor_match.group(1),
-                "turn": anchor_match.group(2),
-                "transcript": anchor_match.group(3),
-            }
-
-        if json_output:
-            result = {
-                "chunk_hash": chunk_hash,
-                "source": source,
-                "heading": heading,
-                "start_line": expanded_start,
-                "end_line": expanded_end,
-                "content": expanded,
-            }
-            if anchor:
-                result["anchor"] = anchor
-            click.echo(json.dumps(result, indent=2, ensure_ascii=False))
-        else:
-            click.echo(f"Source: {source} (lines {expanded_start}-{expanded_end})")
-            if heading:
-                click.echo(f"Heading: {heading}")
-            if anchor:
-                click.echo(f"Session: {anchor['session']}  Turn: {anchor['turn']}")
-                click.echo(f"Transcript: {anchor['transcript']}")
-            click.echo(f"\n{expanded}")
     except CollectionNotFoundError as e:
         click.echo(f"Error: {e}", err=True)
         raise SystemExit(1) from None
@@ -965,11 +1225,19 @@ def summarize(plugin: str, agent_name: str) -> None:
 )
 @click.option("--milvus-uri", default=None, help="Milvus connection URI.")
 @click.option("--milvus-token", default=None, help="Milvus auth token.")
+@click.option(
+    "--no-daemon",
+    "no_daemon",
+    is_flag=True,
+    default=False,
+    help="Ignore a running 'memsearch serve' daemon and use the local store.",
+)
 def stats(
     collection: str | None,
     default_collection: str | None,
     milvus_uri: str | None,
     milvus_token: str | None,
+    no_daemon: bool,
 ) -> None:
     """Show statistics about the index."""
     from .store import MilvusStore
@@ -982,8 +1250,17 @@ def stats(
         ),
         default_overrides=_build_cli_overrides(collection=default_collection),
     )
+    client = _daemon_client_or_none(cfg.milvus.collection, no_daemon, collection, milvus_uri, milvus_token)
     store = None
     try:
+        if client is not None:
+            data = _daemon_call(client, "stats", {})
+            click.echo(f"Total indexed chunks: {data['total_chunks']}")
+            if data.get("source_list"):
+                click.echo(f"source files: {data['sources']}")
+                for source in data["source_list"]:
+                    click.echo(f"  {source}")
+            return
         store = MilvusStore(
             uri=cfg.milvus.uri,
             token=cfg.milvus.token or None,
