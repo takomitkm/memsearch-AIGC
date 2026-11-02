@@ -40,7 +40,6 @@ Commands:
 | `memsearch transcript` | Progressive disclosure L3: view turns from a JSONL transcript 🔌 |
 | `memsearch stats` | Display index statistics (total chunk count) |
 | `memsearch reset` | Drop all indexed data from the Milvus collection |
-| `memsearch mcp` | Run an MCP server on stdio exposing memsearch as tools |
 
 > 🔌 Commands marked with 🔌 are designed for the [platform plugins](platforms/index.md)' progressive disclosure workflow, but work as standalone CLI tools too.
 
@@ -407,9 +406,8 @@ Indexed 42 chunks.
 
 Run a semantic search query against indexed chunks. Uses [hybrid search](https://milvus.io/docs/multi-vector-search.md) (dense vector cosine similarity + [BM25](https://en.wikipedia.org/wiki/Okapi_BM25) full-text) with [RRF](https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf) reranking for best results.
 
-Optional second-stage reranking can use a local cross-encoder, the remote Jev
-provider, or your own rerank HTTP service after RRF fusion. To enable Jev in
-trusted global configuration:
+Optional second-stage reranking can use a local cross-encoder or the remote Jev
+provider after RRF fusion. To enable Jev in trusted global configuration:
 
 ```bash
 export TYPESAFE_API_KEY="your-key"
@@ -420,21 +418,6 @@ memsearch search "how to configure Redis caching"
 This sends the query and candidate contents to TypeSafe and requires no local
 reranker weights. It is disabled by default. See [reranker configuration](home/configuration.md#optional-remote-reranking)
 and the [bilingual evaluation](https://github.com/zilliztech/memsearch/blob/main/evaluation/reranking-evaluation.md).
-
-To rerank against a remote service instead, point the prefix at it:
-
-```bash
-export MEMSEARCH_REMOTE_RERANKER_URL="http://127.0.0.1:8081/v1/rerank"
-memsearch config set reranker.model "remote:Qwen3-Reranker-8B"
-memsearch search "how to configure Redis caching"
-```
-
-The same query and candidate contents leave the machine, but go to your own
-endpoint (or any hosted rerank API serving the same payload shape, which
-authenticates with `MEMSEARCH_REMOTE_RERANKER_API_KEY`). `MEMSEARCH_REMOTE_RERANKER_URL` defaults
-to `http://127.0.0.1:8081/v1/rerank` when unset. Each request waits up to 60 s,
-which a CPU-served cross-encoder can exceed. See
-[reranker configuration](home/configuration.md#remote-rerank-service).
 
 ### Options
 
@@ -748,7 +731,7 @@ encoding is the console code page and would corrupt Chinese payloads).
 | `--milvus-uri` | | `~/.memsearch/milvus.db` | Milvus connection URI |
 | `--milvus-token` | | *(none)* | Milvus auth token |
 | `--reranker-model` | | *(config)* | Cross-encoder model for reranking (empty string disables) |
-| `--knowledge-db` | | *(none)* | Knowledge store (SQLite) to expose as `knowledge_search` |
+| `--knowledge-db` | | *(auto)* | Knowledge store (SQLite) to expose as `knowledge_search`; defaults to the third-party dsh-knowledge plugin's store when present |
 | `--max-content-chars` | | `2000` | Truncate tool output content to this many characters |
 
 ### Examples
@@ -761,9 +744,6 @@ args = ["mcp"]
 
 # Claude Code
 claude mcp add memsearch -- memsearch mcp
-
-# Expose a DeepSeek Harness knowledge store as well
-memsearch mcp --knowledge-db ~/.dsh/storages/knowledge-chunks.sqlite
 ```
 
 ### Notes
@@ -773,8 +753,11 @@ memsearch mcp --knowledge-db ~/.dsh/storages/knowledge-chunks.sqlite
   tunnel is just an OpenAI-compatible `base_url`.
 - **The knowledge store is read-only.** `knowledge_search` opens the
   SQLite file with `mode=ro`, so a running knowledge plugin is never
-  disturbed. Without `--knowledge-db` (or `MEMSEARCH_KNOWLEDGE_DB`) the
-  tool is not advertised at all.
+  disturbed. The store of the third-party
+  [`dsh-knowledge`](https://github.com/Soren-ABT/dsh-knowledge) plugin is
+  auto-detected at the standard location; `--knowledge-db` (or
+  `MEMSEARCH_KNOWLEDGE_DB`) overrides it, and without any store the tool
+  is not advertised at all.
 - **Tools report errors as tool errors.** Invalid arguments come back
   with `isError: true`; the server itself never dies on a bad call.
 

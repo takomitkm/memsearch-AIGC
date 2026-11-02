@@ -97,8 +97,8 @@ model = "remote:Qwen3-Reranker-8B"
 ```
 
 The text after the prefix is sent as the request `model` field, so it must
-match what the service expects. `MEMSEARCH_REMOTE_RERANKER_URL` is read when the
-request is built; without it, the default is
+match what the service expects. `MEMSEARCH_REMOTE_RERANKER_URL` is read when
+the request is built; without it, the default is
 `http://127.0.0.1:8081/v1/rerank`, which is the usual shape for an SSH tunnel
 to a machine on the LAN. Hosted relays that authenticate the endpoint take a
 bearer token from `MEMSEARCH_REMOTE_RERANKER_API_KEY`. Set the endpoint in the
@@ -111,17 +111,9 @@ The payload is `{"model", "query", "documents"}` and the response is
 leave the machine, exactly as they do for Jev. Like every other reranker,
 this only re-scores retrieved chunks, so changing to or from `remote:` needs
 no reindexing. A failed request raises rather than quietly returning the
-unreranked order.
-
-A CPU deployment is slow enough to be noticeable — nine candidates measured
-10.6 s — and the HTTP timeout is fixed at 60 s in the
-[Python adapter](../python-api.md#optional-self-hosted-rerank-service).
-Disable reranking, or keep the local backends, when that latency is not
-acceptable:
-
-```bash
-memsearch config set reranker.model ""
-```
+unreranked order. See
+[Python API](../python-api.md#optional-remote-rerank-service) for
+programmatic use.
 
 ## Index Exclusions
 

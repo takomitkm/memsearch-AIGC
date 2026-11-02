@@ -57,8 +57,7 @@ MemSearch(
 | `exclude` | `list[str] \| None` | `None` | Additional gitignore-style patterns relative to each directory index root |
 
 `reranker_model` defaults to an empty string (disabled). Set a local
-cross-encoder model ID, `jev:jev-latest` for remote Jev reranking, or
-`qwen-api:<model>` for a self-hosted rerank HTTP service.
+cross-encoder model ID or `jev:jev-latest` for remote Jev reranking.
 
 ### Optional Jev reranking
 
@@ -100,8 +99,8 @@ candidate comparison with Voyage and its limitations.
 
 ### Optional remote rerank service
 
-`remote:` selects an HTTP rerank endpoint — one you run yourself (vLLM's
-`/v1/rerank` and compatible services) or a hosted rerank API that
+`remote:` selects a `/v1/rerank`-compatible HTTP endpoint — one you run
+yourself (vLLM and compatible services) or a hosted rerank API that
 authenticates with a bearer token via `MEMSEARCH_REMOTE_RERANKER_API_KEY`.
 The URL comes from `MEMSEARCH_REMOTE_RERANKER_URL`, or from the constructor
 when you build the adapter directly:
@@ -111,20 +110,15 @@ mem = MemSearch(paths=["./memory"], reranker_model="remote:Qwen3-Reranker-8B")
 results = await mem.search("Why was the cache policy changed?", top_k=5)
 ```
 
-Through `reranker_model` the request timeout is the adapter default, 60 s.
-For candidates obtained elsewhere, or to bound the wait differently, use the
-adapter directly:
+Like Jev, search fetches three times the requested `top_k`, reranks those
+candidates, and returns `top_k`. Through `reranker_model` the request timeout
+is the adapter default, 60 s. For candidates obtained elsewhere, or to bound
+the wait differently, use the adapter directly:
 
 ```python
 from memsearch.remote_reranker import RemoteReranker
 
 ranked = RemoteReranker(
-    "Qwen3-Reranker-8B",
-    url="http://127.0.0.1:8081/v1/rerank",
-    timeout=120.0,
-).rerank(
-
-ranked = QwenApiReranker(
     "Qwen3-Reranker-8B",
     url="http://127.0.0.1:8081/v1/rerank",
     timeout=120.0,
@@ -135,14 +129,11 @@ ranked = QwenApiReranker(
 )
 ```
 
-One request carries the query and every candidate text, and
-`score` becomes the returned `relevance_score`. Candidates the service omits
-from `results` — a `top_n` response shorter than the request — are dropped.
-Ties retain the original order. Non-numeric scores, duplicate or out-of-range
-indices, and transport failures raise rather than falling back to the
-unreranked order. `MemSearch.search()` fetches three times `top_k` before
-reranking and runs this request off the event loop, so a slow service does not
-stall other async work.
+The service scores every candidate in one request and returns
+`{"results": [{"index", "relevance_score"}]}`. Candidates the service leaves
+out are dropped, so the caller sees exactly what the reranker ranked highest.
+Errors are surfaced to the caller; an unsuccessful request never silently
+becomes an unreranked result.
 
 ### Context Manager
 

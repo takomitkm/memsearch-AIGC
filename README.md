@@ -666,7 +666,6 @@ CLI.
 ```bash
 memsearch mcp                                        # honour ~/.memsearch/config.toml
 memsearch mcp -c my_collection                       # explicit collection
-memsearch mcp --knowledge-db ~/.dsh/storages/knowledge-chunks.sqlite
 ```
 
 ```toml
@@ -677,7 +676,7 @@ args = ["mcp"]
 ```
 
 Tools: `memory_search`, `memory_index`, `memory_stats`, `memory_expand`,
-`embed`, `rerank` and — when a knowledge store is configured —
+`embed`, `rerank` and — when the dsh-knowledge plugin's store is present —
 `knowledge_search`.
 
 > 📖 Full guide: [MCP server docs](https://zilliztech.github.io/memsearch/mcp/)

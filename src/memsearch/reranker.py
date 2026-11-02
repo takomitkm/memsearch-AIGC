@@ -11,10 +11,9 @@ Local backends are auto-detected at runtime:
 If neither is installed, reranking is silently skipped.
 
 Model names prefixed with ``jev:`` explicitly select the remote Jev API instead.
-Model names prefixed with ``remote:`` select a rerank HTTP service instead —
-a self-hosted ``/v1/rerank`` endpoint or a hosted rerank API serving the same
-payload shape, reached via ``MEMSEARCH_REMOTE_RERANKER_URL``; anything else
-stays on the local backends above.
+Model names prefixed with ``remote:`` select any ``/v1/rerank``-compatible HTTP
+service — a self-hosted endpoint or a hosted rerank API serving the same
+payload shape — reached via ``MEMSEARCH_REMOTE_RERANKER_URL``.
 """
 
 from __future__ import annotations
