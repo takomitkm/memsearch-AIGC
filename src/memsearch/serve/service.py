@@ -56,12 +56,17 @@ class ServeService:
         these; the watcher monitors them.
     """
 
-    def __init__(self, cfg: Any, paths: list[str]) -> None:
+    def __init__(self, cfg: Any, paths: list[str], knowledge_db: str | None = None) -> None:
         from ..config import memsearch_kwargs_from_config
 
         self._cfg = cfg
         self._paths = [str(p) for p in paths]
         self._kwargs = memsearch_kwargs_from_config(cfg)
+        # The dsh-knowledge store rides the daemon too (read-only SQLite, no
+        # Milvus lock contention): one resident process then serves memory AND
+        # knowledge to every client. Empty string = not installed on this box.
+        default_kb = Path("~/.dsh/storages/knowledge-chunks.sqlite").expanduser()
+        self._knowledge_db = knowledge_db or (str(default_kb) if default_kb.is_file() else "")
         self._ms: Any = None
         self._watcher: Any = None
         self._subscribers: set[asyncio.Queue] = set()
@@ -228,6 +233,39 @@ class ServeService:
             items.append(item)
         return {"model": provider.model_name, "count": len(vectors), "dimension": provider.dimension, "vectors": items}
 
+    async def knowledge_search(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Hybrid search over the dsh-knowledge store (read-only SQLite)."""
+        if not self._knowledge_db:
+            raise RpcError(
+                "no knowledge store available on the daemon "
+                "(install the dsh-knowledge plugin or pass --knowledge-db)",
+                NOT_FOUND,
+            )
+        query = str(params.get("query") or "").strip()
+        if not query:
+            raise RpcError("query is required", INVALID_PARAMS)
+        limit = _positive_int(params.get("limit"), default=5, name="limit")
+        base_id = params.get("base_id") or None
+
+        def _search() -> list[dict[str, Any]]:
+            from ..knowledge_store import KnowledgeStore
+
+            store = KnowledgeStore(self._knowledge_db)
+            try:
+                return store.search(
+                    query,
+                    limit=limit,
+                    base_id=base_id,
+                    embed_fn=self._embed_sync,
+                    rerank_fn=self._rerank_sync,
+                )
+            finally:
+                store.close()
+
+        # SQLite + embedding HTTP run off the loop, like every store read here.
+        hits = await asyncio.to_thread(_search)
+        return {"query": query, "count": len(hits), "hits": hits}
+
     async def rerank(self, params: dict[str, Any]) -> dict[str, Any]:
         query = str(params.get("query") or "").strip()
         raw = params.get("documents")
@@ -304,6 +342,31 @@ class ServeService:
     # Helpers
     # ------------------------------------------------------------------
 
+    def _embed_sync(self, texts: list[str]) -> list[list[float]]:
+        """Sync embedding callback for KnowledgeStore.search (worker thread)."""
+        import asyncio
+
+        return asyncio.run(self._require()._embedder.embed(texts))
+
+    def _rerank_sync(self, query: str, documents: list[str]) -> list[float] | None:
+        """Sync rerank callback for KnowledgeStore.search; None disables reranking."""
+        model = self._cfg.reranker.model or ""
+        if not model:
+            return None
+        from ..reranker import rerank as _rerank
+
+        try:
+            candidates = [{"content": d, "source": f"doc:{i}"} for i, d in enumerate(documents)]
+            ranked = _rerank(query, candidates, model_name=model, top_k=len(documents))
+        except Exception:
+            return None
+        scores = [0.0] * len(documents)
+        for r in ranked:
+            src = str(r.get("source", ""))
+            if src.startswith("doc:"):
+                scores[int(src[4:])] = float(r.get("score", 0.0))
+        return scores
+
     def _require(self) -> Any:
         if self._shutting_down:
             raise RpcError("daemon is shutting down", SHUTTING_DOWN)
@@ -318,6 +381,7 @@ class ServeService:
             "ping",
             "status",
             "search",
+            "knowledge_search",
             "index",
             "stats",
             "expand",

@@ -398,6 +398,24 @@ class MCPServer:
         query = str(args.get("query") or "").strip()
         if not query:
             raise ValueError("query is required")
+        # Daemon routing comes first: the daemon owns the knowledge store
+        # knowledge (its presence was decided when the daemon started), so the
+        # local store check below does not apply to the routed call.
+        if self._daemon_client is not None:
+            limit = int(args.get("limit") or 5)
+            base_id = args.get("base_id") or None
+            data = self._daemon_call(
+                "knowledge_search",
+                {"query": query, "limit": limit, "base_id": base_id},
+            )
+            hits = data.get("hits") or []
+            if not hits:
+                return "(no match)"
+            return "\n\n".join(
+                f"[{i}] score={h['score']:.6f}  doc={h.get('doc_id', '')}  #{h.get('heading') or ''}\n"
+                f"{h['text'][: self._max_content_chars]}"
+                for i, h in enumerate(hits, 1)
+            )
         if not self._knowledge_db:
             raise ValueError(
                 "no knowledge store found: install the dsh-knowledge plugin "

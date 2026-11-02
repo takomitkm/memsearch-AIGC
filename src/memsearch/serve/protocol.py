@@ -25,6 +25,7 @@ METHODS = frozenset(
         "ping",
         "status",
         "search",
+        "knowledge_search",
         "index",
         "stats",
         "expand",
