@@ -35,25 +35,34 @@ class FakeDaemonClient:
     async def call(self, method, params, timeout=None):
         self.calls.append((method, params))
         if method == "search":
-            return {"results": [{"score": 1.0, "source": "s.md", "heading": "H",
-                                 "content": params["query"]}]}
+            return {"results": [{"score": 1.0, "source": "s.md", "heading": "H", "content": params["query"]}]}
         if method == "stats":
-            return {"collection": "c", "total_chunks": 7, "sources": 1,
-                    "source_list": ["s.md"]}
+            return {"collection": "c", "total_chunks": 7, "sources": 1, "source_list": ["s.md"]}
         if method == "expand":
-            return {"source": "s.md", "chunk_hash": "abc", "first_line": 1,
-                    "last_line": 3, "heading": "H", "content": "body"}
+            return {
+                "source": "s.md",
+                "chunk_hash": "abc",
+                "first_line": 1,
+                "last_line": 3,
+                "heading": "H",
+                "content": "body",
+            }
         if method == "embed":
-            return {"model": "m", "count": len(params["texts"]), "dimension": 2,
-                    "vectors": [{"norm": 1.0, "embedding": [0.1, 0.2]}
-                                for _ in params["texts"]]}
+            return {
+                "model": "m",
+                "count": len(params["texts"]),
+                "dimension": 2,
+                "vectors": [{"norm": 1.0, "embedding": [0.1, 0.2]} for _ in params["texts"]],
+            }
         if method == "rerank":
-            return {"model": "remote:m",
-                    "results": [{"index": i, "score": 0.9 - i * 0.1, "document": d}
-                                for i, d in enumerate(params["documents"])]}
+            return {
+                "model": "remote:m",
+                "results": [
+                    {"index": i, "score": 0.9 - i * 0.1, "document": d} for i, d in enumerate(params["documents"])
+                ],
+            }
         if method == "index":
-            return {"paths": params["paths"], "indexed_chunks": 3,
-                    "indexed_files": 1, "failed": 0}
+            return {"paths": params["paths"], "indexed_chunks": 3, "indexed_files": 1, "failed": 0}
         raise AssertionError(f"unexpected method {method}")
 
 
@@ -138,9 +147,14 @@ def test_daemon_dying_midrun_is_a_tool_error_not_a_crash(daemon_server) -> None:
         raise DaemonDownError("fake-endpoint", None)
 
     fake.call = broken  # type: ignore[method-assign]
-    reply = server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                           "params": {"name": "memory_search",
-                                      "arguments": {"query": "hi"}}})
+    reply = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "memory_search", "arguments": {"query": "hi"}},
+        }
+    )
     result = reply["result"]
     assert result["isError"] is True
     assert "memsearch serve start" in result["content"][0]["text"]

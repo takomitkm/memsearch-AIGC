@@ -29,7 +29,9 @@ from .protocol import INTERNAL, INVALID_PARAMS, RpcError
 class HttpServer:
     """Expose one :class:`ServeService` over HTTP on a background thread."""
 
-    def __init__(self, service: Any, *, loop: asyncio.AbstractEventLoop, host: str = "127.0.0.1", port: int = 19835) -> None:
+    def __init__(
+        self, service: Any, *, loop: asyncio.AbstractEventLoop, host: str = "127.0.0.1", port: int = 19835
+    ) -> None:
         self._service = service
         self._loop = loop
         self._host = host
@@ -61,7 +63,10 @@ class HttpServer:
                 except RpcError as exc:
                     return {"id": body.get("id"), "error": {"code": exc.code, "message": exc.message}}
                 except Exception as exc:
-                    return {"id": body.get("id"), "error": {"code": INTERNAL, "message": f"{type(exc).__name__}: {exc}"}}
+                    return {
+                        "id": body.get("id"),
+                        "error": {"code": INTERNAL, "message": f"{type(exc).__name__}: {exc}"},
+                    }
                 return {"id": body.get("id"), "result": result}
 
             def do_POST(self) -> None:

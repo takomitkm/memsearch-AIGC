@@ -649,7 +649,6 @@ def mcp(
         raise SystemExit(EXIT_DAEMON_DOWN) from None
 
 
-
 def _echo_expand_result(
     json_output: bool,
     chunk_hash: str,
@@ -696,7 +695,6 @@ def _echo_expand_result(
         click.echo(f"\n{expanded}")
 
 
-
 # ======================================================================
 # Serve daemon (#780): resident service + thin-client CLI routing
 # ======================================================================
@@ -716,11 +714,25 @@ def serve() -> None:
 @serve.command("start")
 @_common_options
 @click.argument("paths", nargs=-1, type=click.Path(exists=True, path_type=Path))
-@click.option("--socket", "socket_path", default=None, type=click.Path(path_type=Path), help="Unix socket path (POSIX default).")
+@click.option(
+    "--socket", "socket_path", default=None, type=click.Path(path_type=Path), help="Unix socket path (POSIX default)."
+)
 @click.option("--tcp-port", default=None, type=int, help="Loopback TCP port (default on Windows).")
 @click.option("--http-port", default=None, type=int, help="Also serve POST /rpc and GET /health on this port.")
-@click.option("--pidfile", "pidfile_path", default=None, type=click.Path(path_type=Path), help="PID file (default: per-collection under ~/.memsearch).")
-@click.option("--log-file", "log_file", default=None, type=click.Path(path_type=Path), help="Write daemon logs (INFO and up) to this file instead of stderr.")
+@click.option(
+    "--pidfile",
+    "pidfile_path",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="PID file (default: per-collection under ~/.memsearch).",
+)
+@click.option(
+    "--log-file",
+    "log_file",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Write daemon logs (INFO and up) to this file instead of stderr.",
+)
 def serve_start(
     paths: tuple[str, ...],
     provider: str | None,
@@ -796,7 +808,9 @@ def serve_status() -> None:
     data = _daemon_call(client, "status", {})
     click.echo(f"daemon: running at {client.endpoint}")
     click.echo(f"  collection: {data.get('collection')}")
-    click.echo(f"  uptime: {data.get('uptime_seconds')}s  watching: {data.get('watching')}  subscribers: {data.get('subscribers')}")
+    click.echo(
+        f"  uptime: {data.get('uptime_seconds')}s  watching: {data.get('watching')}  subscribers: {data.get('subscribers')}"
+    )
 
 
 @serve.command("stop")

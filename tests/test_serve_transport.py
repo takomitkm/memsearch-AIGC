@@ -151,6 +151,7 @@ async def test_http_rpc_and_health() -> None:
     http = HttpServer(FakeService(), loop=asyncio.get_running_loop(), port=0)
     http.start()
     try:
+
         def post(payload: dict) -> dict:
             req = urllib.request.Request(
                 http.endpoint + "/rpc",

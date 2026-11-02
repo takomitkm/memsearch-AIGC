@@ -28,12 +28,13 @@ from typing import Any
 from .protocol import (
     INTERNAL,
     INVALID_PARAMS,
-    event_line,
     error_line,
+    event_line,
     parse_message,
     parse_request,
     response_line,
 )
+
 
 #: Loopback port used when no Unix socket is available (Windows) or ``--tcp-port``
 #: is not given. Matches the thin client's default so discovery needs no config.
@@ -135,7 +136,8 @@ class SocketServer:
                     getter = asyncio.ensure_future(subscribed_queue.get())
                     reader_task = asyncio.ensure_future(reader.readline())
                     done, pending = await asyncio.wait(
-                        {getter, reader_task}, return_when=asyncio.FIRST_COMPLETED,
+                        {getter, reader_task},
+                        return_when=asyncio.FIRST_COMPLETED,
                     )
                     for pending_task in pending:
                         pending_task.cancel()

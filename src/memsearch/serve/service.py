@@ -38,8 +38,8 @@ from .protocol import (
     INVALID_PARAMS,
     NOT_FOUND,
     NOT_READY,
-    RpcError,
     SHUTTING_DOWN,
+    RpcError,
 )
 
 

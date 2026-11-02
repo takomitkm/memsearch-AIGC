@@ -55,7 +55,9 @@ def test_stats_routes_through_a_live_daemon(monkeypatch) -> None:
 
 def test_no_daemon_flag_skips_routing(monkeypatch) -> None:
     seen: list[str] = []
-    monkeypatch.setattr(client_mod, "daemon_client_if_alive", lambda collection: seen.append(collection) or FakeClient())
+    monkeypatch.setattr(
+        client_mod, "daemon_client_if_alive", lambda collection: seen.append(collection) or FakeClient()
+    )
     # The command proceeds down the local path, which cannot reach this store —
     # the point is only that routing was skipped.
     result = CliRunner().invoke(cli, ["stats", "--no-daemon", "--milvus-uri", "S:\\definitely\\not\\here\\x.db"])

@@ -381,8 +381,7 @@ class MCPServer:
         if self._daemon_client is not None:
             data = self._daemon_call("rerank", {"query": query, "documents": documents})
             return "\n".join(
-                f"{i}. score={r['score']:.6f}  {r['document']}"
-                for i, r in enumerate(data["results"][: len(documents)])
+                f"{i}. score={r['score']:.6f}  {r['document']}" for i, r in enumerate(data["results"][: len(documents)])
             )
         from .remote_reranker import RemoteReranker
 

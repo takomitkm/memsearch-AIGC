@@ -45,8 +45,7 @@ class DaemonDownError(RuntimeError):
     """No daemon answered at the resolved endpoint."""
 
     def __init__(self, endpoint: str, cause: Exception | None = None) -> None:
-        super().__init__(f"no memsearch serve daemon at {endpoint} "
-                         f"(start one with 'memsearch serve start')")
+        super().__init__(f"no memsearch serve daemon at {endpoint} (start one with 'memsearch serve start')")
         self.endpoint = endpoint
         self.code = DAEMON_DOWN
         self.__cause__ = cause

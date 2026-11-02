@@ -80,8 +80,12 @@ async def run_daemon(
         if http_port is not None:
             http_srv = HttpServer(svc, loop=loop, port=http_port)
             http_srv.start()
-        log.info("memsearch serve ready: %s%s (pidfile %s)", socket_srv.endpoint,
-                 f" + {http_srv.endpoint}" if http_srv else "", pid_path)
+        log.info(
+            "memsearch serve ready: %s%s (pidfile %s)",
+            socket_srv.endpoint,
+            f" + {http_srv.endpoint}" if http_srv else "",
+            pid_path,
+        )
 
         if install_signals and hasattr(loop, "add_signal_handler"):
             for sig in (signal.SIGINT, signal.SIGTERM):
@@ -93,7 +97,8 @@ async def run_daemon(
         stop_event: asyncio.Event = socket_srv._shutdown_event
         stop_task = asyncio.create_task(stop_event.wait(), name="serve-stop")
         done, _pending = await asyncio.wait(
-            {serve_task, stop_task}, return_when=asyncio.FIRST_COMPLETED,
+            {serve_task, stop_task},
+            return_when=asyncio.FIRST_COMPLETED,
         )
         for task in done:
             exc = task.exception()
@@ -118,5 +123,3 @@ def _default_pidfile(collection: str) -> Path:
     from .pidfile import default_socket_and_pid
 
     return default_socket_and_pid(collection)[1]
-
-
