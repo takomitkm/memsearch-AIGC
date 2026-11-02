@@ -90,3 +90,24 @@ def test_argument_errors_surface_as_tool_errors(monkeypatch) -> None:
 
     with pytest.raises(ToolError, match="query is required"):
         asyncio.run(run())
+
+
+def test_tools_carry_mcp_builder_annotations(monkeypatch) -> None:
+    """mcp-builder best practices: every tool declares its side-effect profile.
+
+    The wire format keeps the MCP-spec camelCase names (readOnlyHint, ...);
+    MCP SDK v2 exposes them as snake_case Python attributes.
+    """
+    mcp = _build(monkeypatch)
+
+    async def run() -> dict:
+        async with Client(mcp) as client:
+            return {t.name: t for t in await client.list_tools()}
+
+    tools = asyncio.run(run())
+    for name, tool in tools.items():
+        assert tool.annotations is not None, f"{name} has no annotations"
+    assert tools["memory_search"].annotations.read_only_hint is True
+    assert tools["memory_stats"].annotations.open_world_hint is False
+    assert tools["memory_index"].annotations.read_only_hint is False
+    assert tools["memory_index"].annotations.idempotent_hint is True

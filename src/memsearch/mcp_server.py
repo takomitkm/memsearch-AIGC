@@ -49,6 +49,19 @@ def _package_version() -> str:
 
 SERVER_VERSION = _package_version()
 
+#: MCP tool annotations shared by both backends (mcp-builder best practices).
+#: The wire format keeps the MCP spec's camelCase names.  Read-only tools never
+#: mutate the store; the memory/embed/rerank tools reach remote services, while
+#: stats/expand stay local; indexing is an idempotent upsert, not destructive.
+ANNOTATIONS_READ = {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": True}
+ANNOTATIONS_READ_LOCAL = {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False}
+ANNOTATIONS_UPSERT = {
+    "readOnlyHint": False,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": True,
+}
+
 #: Environment variable pointing at a DeepSeek Harness knowledge store.
 KNOWLEDGE_DB_ENV = "MEMSEARCH_KNOWLEDGE_DB"
 
@@ -127,6 +140,19 @@ class MCPServer:
                 dimension=None,
             )
         return self._store
+
+    @property
+    def knowledge_db(self) -> str:
+        """Resolved knowledge store path (``""`` when none was configured)."""
+        return self._knowledge_db
+
+    def has_knowledge_store(self) -> bool:
+        """True when a knowledge store path is configured and exists.
+
+        Both MCP backends gate the ``knowledge_search`` tool on this: a client
+        without the dsh-knowledge plugin sees no trace of the tool.
+        """
+        return bool(self._knowledge_db) and Path(self._knowledge_db).expanduser().exists()
 
     def close(self) -> None:
         for closable in (self._ms, self._store):
@@ -358,6 +384,7 @@ class MCPServer:
                     "optionally cross-encoder reranked). Use it to recall earlier "
                     "decisions, commands, files and outcomes."
                 ),
+                "annotations": ANNOTATIONS_READ,
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -374,6 +401,7 @@ class MCPServer:
             {
                 "name": "memory_index",
                 "description": "Index markdown files or directories into the memsearch collection.",
+                "annotations": ANNOTATIONS_UPSERT,
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -390,6 +418,7 @@ class MCPServer:
             {
                 "name": "memory_stats",
                 "description": "Show the chunk count and indexed source files of a collection.",
+                "annotations": ANNOTATIONS_READ_LOCAL,
                 "inputSchema": {"type": "object", "properties": {}},
             },
             {
@@ -398,6 +427,7 @@ class MCPServer:
                     "Expand one memory chunk to its full heading section (progressive "
                     "disclosure step 2: search -> expand -> transcript)."
                 ),
+                "annotations": ANNOTATIONS_READ_LOCAL,
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -412,6 +442,7 @@ class MCPServer:
                 "description": (
                     "Embed text with the configured embedding provider (OpenAI-compatible endpoint by default)."
                 ),
+                "annotations": ANNOTATIONS_READ,
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -430,6 +461,7 @@ class MCPServer:
                     "Cross-encoder rerank documents against a query using the "
                     "configured remote reranker (reranker.model = 'remote:...')."
                 ),
+                "annotations": ANNOTATIONS_READ,
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -440,7 +472,7 @@ class MCPServer:
                 },
             },
         ]
-        if self._knowledge_db and Path(self._knowledge_db).expanduser().exists():
+        if self.has_knowledge_store():
             tools.append(
                 {
                     "name": "knowledge_search",
@@ -448,6 +480,7 @@ class MCPServer:
                         "Hybrid search (dense vectors + BM25) over the knowledge store of the "
                         "third-party dsh-knowledge DSH plugin, with cross-encoder reranking."
                     ),
+                    "annotations": ANNOTATIONS_READ,
                     "inputSchema": {
                         "type": "object",
                         "properties": {

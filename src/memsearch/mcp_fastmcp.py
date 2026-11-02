@@ -21,11 +21,13 @@ Usage::
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from .config import MemSearchConfig
 from .mcp_server import (
+    ANNOTATIONS_READ,
+    ANNOTATIONS_READ_LOCAL,
+    ANNOTATIONS_UPSERT,
     DEFAULT_KNOWLEDGE_DB,
     KNOWLEDGE_DB_ENV,
     SERVER_NAME,
@@ -55,15 +57,18 @@ def build_server(
     collection: str | None = None,
     knowledge_db: str | None = None,
     max_content_chars: int = 2000,
+    backend: MCPServer | None = None,
 ):
     """Return a configured ``fastmcp.FastMCP`` instance exposing memsearch tools.
 
     The returned object can be run (``mcp.run()``) or passed to
-    ``fastmcp.Client`` for in-process tests.
+    ``fastmcp.Client`` for in-process tests.  Pass *backend* to reuse an
+    already configured :class:`MCPServer` (``serve_fastmcp`` does this so it
+    can close the lazily created store on shutdown).
     """
     FastMCP, ToolError = _load_fastmcp()
 
-    backend = MCPServer(
+    backend = backend or MCPServer(
         config=config,
         collection=collection,
         knowledge_db=knowledge_db,
@@ -88,7 +93,11 @@ def build_server(
         ),
     )
 
-    @mcp.tool()
+    # MCP tool annotations (mcp-builder best practices): read-only tools never
+    # mutate the store; remote embedding/rerank calls reach the outside world;
+    # indexing is an idempotent upsert, not a destructive operation.
+
+    @mcp.tool(annotations=ANNOTATIONS_READ)
     def memory_search(query: str, limit: int = 5, source_prefix: str | None = None) -> str:
         """Search memsearch's persistent memory (hybrid dense + BM25, optionally reranked).
 
@@ -101,7 +110,7 @@ def build_server(
             source_prefix=source_prefix,
         )
 
-    @mcp.tool()
+    @mcp.tool(annotations=ANNOTATIONS_UPSERT)
     def memory_index(paths: list[str], force: bool = False) -> str:
         """Index markdown files or directories into the memsearch collection.
 
@@ -109,12 +118,12 @@ def build_server(
         """
         return call(backend.tool_memory_index, paths=paths, force=force)
 
-    @mcp.tool()
+    @mcp.tool(annotations=ANNOTATIONS_READ_LOCAL)
     def memory_stats() -> str:
         """Show the chunk count and indexed source files of a collection."""
         return call(backend.tool_memory_stats)
 
-    @mcp.tool()
+    @mcp.tool(annotations=ANNOTATIONS_READ_LOCAL)
     def memory_expand(chunk_id: str, lines: int | None = None) -> str:
         """Expand one memory chunk to its full heading section.
 
@@ -124,7 +133,7 @@ def build_server(
         """
         return call(backend.tool_memory_expand, chunk_id=chunk_id, lines=lines)
 
-    @mcp.tool()
+    @mcp.tool(annotations=ANNOTATIONS_READ)
     def embed(texts: list[str], include_vector: bool = False) -> str:
         """Embed text with the configured embedding provider (OpenAI-compatible by default).
 
@@ -132,7 +141,7 @@ def build_server(
         """
         return call(backend.tool_embed, texts=texts, include_vector=include_vector)
 
-    @mcp.tool()
+    @mcp.tool(annotations=ANNOTATIONS_READ)
     def rerank(query: str, documents: list[str]) -> str:
         """Cross-encoder rerank documents against a query with the configured remote reranker.
 
@@ -142,9 +151,9 @@ def build_server(
 
     # The knowledge tool is advertised only when the third-party dsh-knowledge
     # store exists (same gate as the stdlib backend's tool_definitions()).
-    if backend._knowledge_db and Path(backend._knowledge_db).expanduser().exists():
+    if backend.has_knowledge_store():
 
-        @mcp.tool()
+        @mcp.tool(annotations=ANNOTATIONS_READ)
         def knowledge_search(query: str, limit: int = 5, base_id: str | None = None) -> str:
             """Hybrid search over the knowledge store of the third-party dsh-knowledge DSH plugin.
 
@@ -170,13 +179,24 @@ def serve_fastmcp(
 ) -> None:
     """Run the FastMCP-backed server over stdio until the client disconnects."""
     _reconfigure_streams()
-    mcp = build_server(
+    backend = MCPServer(
         config=config,
         collection=collection,
         knowledge_db=knowledge_db,
         max_content_chars=max_content_chars,
     )
-    mcp.run(transport="stdio")
+    mcp = build_server(
+        config=config,
+        collection=collection,
+        knowledge_db=knowledge_db,
+        max_content_chars=max_content_chars,
+        backend=backend,
+    )
+    try:
+        # No banner: stdio servers are embedded, and stderr should stay quiet.
+        mcp.run(transport="stdio", show_banner=False)
+    finally:
+        backend.close()
 
 
 __all__ = ["DEFAULT_KNOWLEDGE_DB", "KNOWLEDGE_DB_ENV", "build_server", "serve_fastmcp"]
