@@ -344,12 +344,12 @@ class MCPServer:
 
         import asyncio
 
+        include = bool(args.get("include_vector"))
         if self._daemon_client is not None:
             payload = self._daemon_call("embed", {"texts": texts, "include_vector": include})
             return json.dumps(payload, ensure_ascii=False, indent=1)
         provider = self._memsearch()._embedder
         vectors = asyncio.run(provider.embed(texts))
-        include = bool(args.get("include_vector"))
         payload = {
             "model": provider.model_name,
             "count": len(vectors),

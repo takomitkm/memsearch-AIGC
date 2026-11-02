@@ -22,6 +22,7 @@ unavailable", never like an empty result.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 from pathlib import Path
 from typing import Any
@@ -145,15 +146,13 @@ class ThinClient:
             raise DaemonDownError(self.endpoint, exc) from exc
         finally:
             writer.close()
-            try:
+            with contextlib.suppress(ConnectionError, OSError):
                 await writer.wait_closed()
-            except (ConnectionError, OSError):
-                pass
         if response.error is not None:
             raise RpcError(str(response.error.get("message", "")), str(response.error.get("code", "INTERNAL")))
         return response.result
 
-    def daemon_client_if_alive(self) -> "ThinClient | None":
+    def daemon_client_if_alive(collection: str) -> ThinClient | None:
         """Self-check: return self when the daemon answers, else None."""
         return self if self.is_alive() else None
 

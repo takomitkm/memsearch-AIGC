@@ -17,7 +17,7 @@ import pytest
 
 from memsearch.serve.client import ENV_NO_DAEMON, DaemonDownError, ThinClient, daemon_client_if_alive
 from memsearch.serve.http_server import HttpServer
-from memsearch.serve.protocol import INTERNAL, INVALID_PARAMS, NOT_FOUND, RpcError, event_line, request_line
+from memsearch.serve.protocol import INTERNAL, INVALID_PARAMS, NOT_FOUND, RpcError, request_line
 from memsearch.serve.socket_server import SocketServer
 
 

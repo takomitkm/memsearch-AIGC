@@ -86,11 +86,11 @@ async def run_daemon(
         if install_signals and hasattr(loop, "add_signal_handler"):
             for sig in (signal.SIGINT, signal.SIGTERM):
                 with contextlib.suppress(ValueError, OSError, RuntimeError):
-                    loop.add_signal_handler(sig, socket_srv._shutdown_event.set)  # noqa: SLF001
+                    loop.add_signal_handler(sig, socket_srv._shutdown_event.set)
                     signal_sources.append(sig)
 
         serve_task = asyncio.create_task(socket_srv.serve_forever(), name="serve-socket")
-        stop_event: asyncio.Event = socket_srv._shutdown_event  # noqa: SLF001 - same module
+        stop_event: asyncio.Event = socket_srv._shutdown_event
         stop_task = asyncio.create_task(stop_event.wait(), name="serve-stop")
         done, _pending = await asyncio.wait(
             {serve_task, stop_task}, return_when=asyncio.FIRST_COMPLETED,

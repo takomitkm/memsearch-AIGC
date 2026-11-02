@@ -60,11 +60,11 @@ class HttpServer:
                     result = fut.result(timeout=300)
                 except RpcError as exc:
                     return {"id": body.get("id"), "error": {"code": exc.code, "message": exc.message}}
-                except Exception as exc:  # noqa: BLE001 - surface as a typed error envelope
+                except Exception as exc:
                     return {"id": body.get("id"), "error": {"code": INTERNAL, "message": f"{type(exc).__name__}: {exc}"}}
                 return {"id": body.get("id"), "result": result}
 
-            def do_POST(self) -> None:  # noqa: N802 - http.server naming
+            def do_POST(self) -> None:
                 if self.path != "/rpc":
                     self._send(404, {"error": {"code": "NOT_FOUND", "message": f"unknown path {self.path}"}})
                     return
@@ -78,7 +78,7 @@ class HttpServer:
                     return
                 self._send(200, self._dispatch(body))
 
-            def do_GET(self) -> None:  # noqa: N802 - http.server naming
+            def do_GET(self) -> None:
                 if self.path == "/health":
                     self._send(200, {"ok": True, "ready": bool(getattr(service, "is_ready", False))})
                     return

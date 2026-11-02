@@ -21,6 +21,7 @@ configuration.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from pathlib import Path
 from typing import Any
 
@@ -109,19 +110,14 @@ class SocketServer:
             self._server = None
         for task in list(self._tasks):
             task.cancel()
-        for task in list(self._tasks):
-            try:
-                await task
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001 - teardown best effort
-                pass
+        # gather consumes the cancellations without a try/except per task
+        await asyncio.gather(*list(self._tasks), return_exceptions=True)
         self._tasks.clear()
         if self._path is not None:
             # A Unix socket file outlives the listener; a stale one would make
             # the next bind fail with EADDRINUSE.
-            try:
+            with contextlib.suppress(FileNotFoundError):
                 self._path.unlink()
-            except FileNotFoundError:
-                pass
 
     # ------------------------------------------------------------------
 
@@ -185,10 +181,8 @@ class SocketServer:
                 if callable(unsubscribe):
                     unsubscribe(subscribed_queue)
             writer.close()
-            try:
+            with contextlib.suppress(ConnectionError, asyncio.CancelledError):
                 await writer.wait_closed()
-            except (ConnectionError, asyncio.CancelledError):
-                pass
             if task is not None:
                 self._tasks.discard(task)
 
