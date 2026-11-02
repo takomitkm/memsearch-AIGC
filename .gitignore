@@ -24,7 +24,6 @@ htmlcov/
 
 # Runtime
 .memsearch/
-.patch-backups/
 CONTEXT.md
 CLAUDE.local.md
 AGENTS.local.md
@@ -38,6 +37,3 @@ AGENTS.local.md
 # OS
 .DS_Store
 Thumbs.db
-
-# pytest tmp dirs
-pytest-of-*/
