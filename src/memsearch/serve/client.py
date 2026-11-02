@@ -152,10 +152,6 @@ class ThinClient:
             raise RpcError(str(response.error.get("message", "")), str(response.error.get("code", "INTERNAL")))
         return response.result
 
-    def daemon_client_if_alive(collection: str) -> ThinClient | None:
-        """Self-check: return self when the daemon answers, else None."""
-        return self if self.is_alive() else None
-
     async def _connect(self) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
         if self._kind == "unix":
             return await asyncio.open_unix_connection(str(self._path))
@@ -173,4 +169,4 @@ def daemon_client_if_alive(collection: str) -> ThinClient | None:
     if os.environ.get(ENV_NO_DAEMON):
         return None
     client = ThinClient(collection=collection)
-    return client.daemon_client_if_alive()
+    return client if client.is_alive() else None
