@@ -74,7 +74,7 @@ async def run_daemon(
             svc,
             unix_path=socket_path,
             tcp_port=tcp_port,
-            shutdown_event=loop.create_event(),
+            shutdown_event=asyncio.Event(),
         )
         await socket_srv.start()
         if http_port is not None:

@@ -12,7 +12,6 @@ import json
 
 import pytest
 
-import memsearch.serve.client as client_mod
 from memsearch.config import MemSearchConfig
 from memsearch.mcp_server import MCPServer
 from memsearch.serve.client import DaemonDownError
@@ -69,7 +68,9 @@ class FakeDaemonClient:
 @pytest.fixture
 def daemon_server(monkeypatch) -> tuple[MCPServer, FakeDaemonClient]:
     fake = FakeDaemonClient()
-    monkeypatch.setattr(client_mod, "ThinClient", lambda **kw: fake)
+    # MCPServer binds ThinClient at import time, so patch the name where it is
+    # looked up, not in the defining module.
+    monkeypatch.setattr("memsearch.mcp_server.ThinClient", lambda **kw: fake)
     return MCPServer(config=MemSearchConfig(), collection="c", daemon=True), fake
 
 
@@ -134,7 +135,7 @@ def test_store_access_is_blocked_in_daemon_mode(daemon_server) -> None:
 
 
 def test_daemon_down_at_construction(monkeypatch) -> None:
-    monkeypatch.setattr(client_mod, "ThinClient", lambda **kw: FakeDaemonClient(alive=False))
+    monkeypatch.setattr("memsearch.mcp_server.ThinClient", lambda **kw: FakeDaemonClient(alive=False))
     with pytest.raises(DaemonDownError):
         MCPServer(config=MemSearchConfig(), collection="c", daemon=True)
 

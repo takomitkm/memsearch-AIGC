@@ -20,6 +20,10 @@ class FakeClient:
         self.error = error
         self.calls: list[tuple[str, dict]] = []
 
+    @property
+    def endpoint(self) -> str:
+        return "fake-endpoint"
+
     async def call(self, method, params, timeout=None):
         self.calls.append((method, params))
         if self.error is not None:
