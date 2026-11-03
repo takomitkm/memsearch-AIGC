@@ -237,8 +237,7 @@ class ServeService:
         """Hybrid search over the dsh-knowledge store (read-only SQLite)."""
         if not self._knowledge_db:
             raise RpcError(
-                "no knowledge store available on the daemon "
-                "(install the dsh-knowledge plugin or pass --knowledge-db)",
+                "no knowledge store available on the daemon (install the dsh-knowledge plugin or pass --knowledge-db)",
                 NOT_FOUND,
             )
         query = str(params.get("query") or "").strip()
