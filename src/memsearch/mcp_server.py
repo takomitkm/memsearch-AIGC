@@ -189,6 +189,11 @@ class MCPServer:
         self._ms = None
         self._store = None
 
+    @property
+    def knowledge_db(self) -> str:
+        """Resolved knowledge store path ("" when none was configured)."""
+        return self._knowledge_db
+
     def close(self) -> None:
         self._close_memory_resources()
         self._embedder = None

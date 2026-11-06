@@ -429,6 +429,17 @@ def search(
     type=int,
     help="Truncate tool output content to this many characters.",
 )
+@click.option(
+    "--backend",
+    type=click.Choice(["stdlib", "fastmcp", "official"]),
+    default="stdlib",
+    show_default=True,
+    help=(
+        "Protocol implementation: 'stdlib' is the built-in zero-dependency server; "
+        "'fastmcp' uses the standalone fastmcp package; 'official' uses the "
+        "first-party MCP SDK (mcp.server.mcpserver.MCPServer)."
+    ),
+)
 def mcp(
     provider: str | None,
     model: str | None,
@@ -442,6 +453,7 @@ def mcp(
     reranker_model: str | None,
     knowledge_db: str | None,
     max_content_chars: int,
+    backend: str,
 ) -> None:
     """Run an MCP server on stdio that exposes memsearch tools.
 
@@ -452,6 +464,32 @@ def mcp(
         command = "memsearch"
         args = ["mcp"]
     """
+    if backend in ("fastmcp", "official"):
+        from .mcp_backends import serve_backends
+
+        cfg = _safe_resolve_config(
+            _build_cli_overrides(
+                provider=provider,
+                model=model,
+                batch_size=batch_size,
+                base_url=base_url,
+                api_key=api_key,
+                collection=collection,
+                milvus_uri=milvus_uri,
+                milvus_token=milvus_token,
+                reranker_model=reranker_model,
+            ),
+            default_overrides=_build_cli_overrides(collection=default_collection),
+        )
+        serve_backends(
+            framework=backend,
+            config=cfg,
+            collection=cfg.milvus.collection,
+            knowledge_db=knowledge_db,
+            max_content_chars=max_content_chars,
+        )
+        return
+
     from .mcp_server import serve
 
     cfg = _safe_resolve_config(

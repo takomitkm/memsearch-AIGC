@@ -42,6 +42,11 @@ local = [
     "sentence-transformers>=3.0",
 ]
 anthropic = ["anthropic>=0.40"]
+# Alternative MCP server implementations (memsearch mcp --backend fastmcp|official).
+# Deliberately NOT part of [all]: the stdlib MCP server is the default and needs
+# no dependency, so `pip install memsearch[all]` stays lean.
+fastmcp = ["fastmcp>=4.1,<5"]
+mcp-official = ["mcp>=2.3,<3"]
 onnx = [
     "onnxruntime>=1.17,<1.24; python_version == '3.10'",
     "onnxruntime>=1.17; python_version >= '3.11'",
