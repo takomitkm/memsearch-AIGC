@@ -1,0 +1,208 @@
+name: Fork PR validation
+run-name: Validate PR fixes (${{ inputs.target || 'both' }})
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/pr-validation.yml']
+  workflow_dispatch:
+    inputs:
+      target:
+        description: PR branch to validate
+        type: choice
+        options: [both, mcp-server, remote-reranker]
+        default: both
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-pr-validation
+  cancel-in-progress: false
+
+jobs:
+  revisions:
+    if: github.repository == 'takomitkm/memsearch-AIGC'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.resolve.outputs.matrix }}
+      mcp_sha: ${{ steps.resolve.outputs.mcp_sha }}
+      rer_sha: ${{ steps.resolve.outputs.rer_sha }}
+    steps:
+      - name: Resolve branch names to immutable commits
+        id: resolve
+        env:
+          REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          TARGET: ${{ inputs.target || 'both' }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+
+          branches = ('mcp-server', 'remote-reranker')
+          target = os.environ['TARGET']
+          if target not in ('both', *branches):
+              raise SystemExit('Unsupported validation target')
+          refs = ['refs/heads/' + branch for branch in branches]
+          listing = subprocess.check_output(
+              ['git', 'ls-remote', os.environ['REPOSITORY_URL'], *refs], text=True
+          )
+          revisions = {}
+          for line in listing.splitlines():
+              sha, ref = line.split()
+              if not re.fullmatch('[0-9a-f]{40}', sha):
+                  raise SystemExit('Invalid commit ID')
+              revisions[ref.removeprefix('refs/heads/')] = sha
+          if set(revisions) != set(branches):
+              raise SystemExit('A PR branch is missing')
+          matrix = []
+          for branch in branches:
+              if target != 'both' and branch != target:
+                  continue
+              for version in ('3.10', '3.11', '3.12', '3.13'):
+                  matrix.append({'ref': branch, 'sha': revisions[branch],
+                                 'os': 'ubuntu-latest', 'python': version})
+              matrix.append({'ref': branch, 'sha': revisions[branch],
+                             'os': 'windows-latest', 'python': '3.13'})
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              print('matrix=' + json.dumps({'include': matrix}), file=output)
+              print('mcp_sha=' + revisions['mcp-server'], file=output)
+              print('rer_sha=' + revisions['remote-reranker'], file=output)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              for branch in branches:
+                  print(f'- {branch}: `{revisions[branch]}`', file=summary)
+          PY
+
+  validate:
+    needs: revisions
+    name: ${{ matrix.ref }} / ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix: ${{ fromJSON(needs.revisions.outputs.matrix) }}
+    steps:
+      - name: Checkout the resolved PR commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ matrix.sha }}
+          persist-credentials: false
+      - name: Record tested commit
+        run: git rev-parse HEAD
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v7
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Setup Node for plugin tests
+        if: runner.os == 'Linux' && matrix.python == '3.12'
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Install complete Linux test dependencies
+        if: runner.os == 'Linux'
+        run: uv sync --locked --all-extras
+      - name: Install Windows test dependencies
+        if: runner.os == 'Windows'
+        run: uv sync --locked
+      - name: Ruff lint
+        run: uv run --locked ruff check src/ tests/
+      - name: Ruff format check
+        if: ${{ !cancelled() }}
+        run: uv run --locked ruff format --check src/ tests/
+      - name: Full Linux test suite
+        if: runner.os == 'Linux'
+        run: uv run --locked python -m pytest --cov --cov-report=term-missing --junitxml=results.xml
+      - name: Windows PR regression tests
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $candidates = @(
+            'tests/test_remote_reranker.py',
+            'tests/test_jev_reranker.py',
+            'tests/test_mcp_server.py',
+            'tests/test_mcp_regressions.py',
+            'tests/test_knowledge_store.py',
+            'tests/test_knowledge_regressions.py',
+            'tests/test_cli_config_helpers.py',
+            'tests/test_cli_expand_section.py'
+          )
+          $selected = @($candidates | Where-Object { Test-Path $_ })
+          if ($selected.Count -eq 0) { throw 'No PR regression tests found' }
+          uv run --locked python -m pytest @selected --junitxml=results.xml
+          exit $LASTEXITCODE
+      - name: DSH plugin checks
+        if: runner.os == 'Linux' && matrix.python == '3.12'
+        working-directory: plugins/dsh
+        run: |
+          npm install --omit=peer --ignore-scripts --package-lock=false
+          npm test
+          node --check index.js
+          node --check client.js
+          npm pack --dry-run
+      - name: OpenCode plugin checks
+        if: runner.os == 'Linux' && matrix.python == '3.12'
+        working-directory: plugins/opencode
+        run: |
+          npm install --package-lock=false
+          npm run typecheck
+          npm test
+          node --check index.ts
+          node --check context.ts
+          npm pack --dry-run
+      - name: Preserve test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: results-${{ matrix.ref }}-${{ matrix.os }}-${{ matrix.python }}
+          path: results.xml
+          if-no-files-found: ignore
+
+  integration:
+    needs: [revisions, validate]
+    if: inputs.target != 'remote-reranker'
+    name: Combined MCP and reranker
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout MCP revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.revisions.outputs.mcp_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Merge reranker into an ephemeral working tree
+        env:
+          RERANKER_SHA: ${{ needs.revisions.outputs.rer_sha }}
+        run: |
+          git config user.name 'CI validation'
+          git config user.email 'ci-validation@users.noreply.github.com'
+          git fetch --no-tags origin "$RERANKER_SHA"
+          git merge --no-commit --no-ff "$RERANKER_SHA"
+          git diff --cached --stat
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v7
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: uv sync --locked --all-extras
+      - name: Check combined formatting and lint
+        run: |
+          uv run --locked ruff check src/ tests/
+          uv run --locked ruff format --check src/ tests/
+      - name: Run combined test suite
+        run: uv run --locked python -m pytest --cov --junitxml=combined-results.xml
+      - name: Preserve combined test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: combined-results
+          path: combined-results.xml
+          if-no-files-found: ignore
